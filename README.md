@@ -1,6 +1,6 @@
 # MLSys — Just-in-Time Model Replacement
 
-Seminar project at HPI implementing the pipeline from [Poodle: Seamlessly Scaling Down Large Language Models with Just-in-Time Model Replacement](./Poodle-%20Seamlessly%20Scaling%20Down%20Large%20Language%20Models%20with%20Just-in-Time%20Model%20Replacement.pdf) by Strassenburg et al.
+Seminar project at HPI researching model search for non-classification tasks.
 
 ## Setup
 
@@ -25,15 +25,7 @@ make setup   # uv sync + pre-commit install
 ## Layout
 
 ```
-src/mlsys/
-├── core/          # Shared types (Row, Label, Prediction) and Protocols (Dataset, LLMClient, CandidateModel)
-├── datasets/      # Dataset adapters behind the Dataset Protocol
-├── llm/           # LLMClient Protocol + prompt/response plumbing (no concrete backend yet)
-├── model_search/  # Candidate pool, scoring, selection — Poodle/Alsatian-style hooks
-├── surrogate/     # Fine-tuning + serving the chosen surrogate
-├── monitoring/    # Parallel A/B comparison + replacement decision
-├── pipeline/      # Orchestration: wires all stages together
-└── cli/           # `python -m mlsys <subcommand>` entrypoints
+//TODO: add layout here
 ```
 
 ## Tooling at a glance

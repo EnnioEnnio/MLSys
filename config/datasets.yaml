@@ -1,0 +1,9 @@
+- name: wine_reviews
+  hf_repo: spawn99/wine-reviews
+  splits:
+    train: train
+    val: validation
+    test: test
+  target_column: points
+  target_type: regression
+  text_template: "description: {description}, variety: {variety}, country: {country}, price: {price} USD"

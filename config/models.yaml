@@ -1,0 +1,30 @@
+# Seed pool: the four candidates from the upper table of
+# candidate_search_ML_systems.md. Peers extend by appending rows.
+
+- name: all-MiniLM-L6-v2
+  hf_repo: sentence-transformers/all-MiniLM-L6-v2
+  loader: sentence_transformers
+  pooling: builtin
+  embedding_dim: 384
+  max_length: 256
+
+- name: all-mpnet-base-v2
+  hf_repo: sentence-transformers/all-mpnet-base-v2
+  loader: sentence_transformers
+  pooling: builtin
+  embedding_dim: 768
+  max_length: 384
+
+- name: potion-base-8M
+  hf_repo: minishlab/potion-base-8M
+  loader: model2vec
+  pooling: builtin
+  embedding_dim: 256
+  max_length: null
+
+- name: potion-base-32M
+  hf_repo: minishlab/potion-base-32M
+  loader: model2vec
+  pooling: builtin
+  embedding_dim: 512
+  max_length: null

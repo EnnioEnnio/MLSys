@@ -6,7 +6,19 @@ build-backend = "hatchling.build"
 name = "mlsys"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "torch",
+    "transformers",
+    "datasets",
+    "sentence-transformers",
+    "model2vec",
+    "huggingface_hub",
+    "pyyaml",
+    "numpy",
+    "scipy",
+    "tqdm",
+    "wandb",
+]
 
 [project.scripts]
 mlsys = "mlsys.cli:main"

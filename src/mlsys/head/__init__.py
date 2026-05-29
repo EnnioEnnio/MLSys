@@ -67,6 +67,12 @@ def train_head(
     """Train an FCHead with AdamW + MSE, early-stop on val-MSE plateau."""
     if config is None:
         config = HeadTrainConfig()
+    if x_train.size(0) == 0 or x_val.size(0) == 0:
+        raise ValueError(
+            "train_head requires non-empty train and val tensors; got "
+            f"{x_train.size(0)} train and {x_val.size(0)} val rows "
+            "(check the dataset splits aren't empty after loading/filtering)"
+        )
     device = x_train.device
     head = FCHead(in_dim=x_train.size(1), hidden=config.hidden).to(device)
     optim = torch.optim.AdamW(head.parameters(), lr=config.lr, weight_decay=config.weight_decay)

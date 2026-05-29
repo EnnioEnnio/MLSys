@@ -1,1 +1,1 @@
-"""mlsys — Just-in-Time Model Replacement pipeline."""
+"""mlsys — model search pipeline for regression tasks."""

@@ -1,1 +1,85 @@
-"""datasets — Dataset adapters behind the Dataset Protocol; one adapter per data source."""
+"""HF dataset loading + per-row text-template rendering."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
+from typing import Any
+
+from mlsys.datasets.registry import DatasetSpec, get_spec, load_specs
+
+__all__ = [
+    "DatasetSpec",
+    "LoadedDataset",
+    "Row",
+    "get_spec",
+    "load_dataset",
+    "load_specs",
+    "render_template",
+]
+
+
+@dataclass(frozen=True)
+class Row:
+    text: str
+    target: float
+
+
+class _SafeDict(dict[str, Any]):
+    def __missing__(self, key: str) -> str:
+        return "unknown"
+
+
+def render_template(template: str, row: dict[str, Any]) -> str:
+    """Render `template` against `row`, substituting `"unknown"` for missing/None values."""
+    cleaned = {k: ("unknown" if v is None else v) for k, v in row.items()}
+    return template.format_map(_SafeDict(cleaned))
+
+
+@dataclass
+class LoadedDataset:
+    spec: DatasetSpec
+    splits: dict[str, _SplitView]
+
+    def split(self, name: str) -> _SplitView:
+        if name not in self.splits:
+            raise KeyError(f"unknown split {name!r}; have {sorted(self.splits)}")
+        return self.splits[name]
+
+
+@dataclass
+class _SplitView:
+    spec: DatasetSpec
+    hf_split: Any  # datasets.Dataset; kept untyped to avoid hard import at module load
+
+    def __iter__(self) -> Iterator[Row]:
+        template = self.spec.text_template
+        target_col = self.spec.target_column
+        for row in self.hf_split:
+            text = render_template(template, row)
+            yield Row(text=text, target=float(row[target_col]))
+
+    def __len__(self) -> int:
+        return len(self.hf_split)
+
+    def batched(self, batch_size: int) -> Iterable[list[Row]]:
+        batch: list[Row] = []
+        for row in self:
+            batch.append(row)
+            if len(batch) == batch_size:
+                yield batch
+                batch = []
+        if batch:
+            yield batch
+
+
+def load_dataset(name: str) -> LoadedDataset:
+    """Open the HF dataset for `name` and expose per-split iterators."""
+    from datasets import load_dataset as hf_load_dataset
+
+    spec = get_spec(name)
+    splits: dict[str, _SplitView] = {}
+    for logical, hf_split_name in spec.splits.items():
+        hf_split = hf_load_dataset(spec.hf_repo, split=hf_split_name)
+        splits[logical] = _SplitView(spec=spec, hf_split=hf_split)
+    return LoadedDataset(spec=spec, splits=splits)

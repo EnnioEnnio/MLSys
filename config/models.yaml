@@ -28,3 +28,10 @@
   pooling: builtin
   embedding_dim: 512
   max_length: null
+
+- name: facebook-bart-base
+  hf_repo: facebook/bart-base
+  loader: transformers_encoder
+  pooling: builtin
+  embedding_dim: 768
+  max_length: 1024

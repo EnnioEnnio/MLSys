@@ -53,23 +53,26 @@ def full_eval(
             writer.write(record.to_dict())
             records.append(record)
             if wandb_run is not None:
-                _log_to_wandb(wandb_run, record)
+                _log_curves_to_wandb(record)
+    if wandb_run is not None:
+        _log_results_table(records)
     return records
 
 
-def _log_to_wandb(run: object, record: RunRecord) -> None:
-    # Imported lazily so the unused-without-flag path stays free of the dep.
-    import wandb  # type: ignore[import-not-found]
-
-    metrics_row = {
+def _result_row(record: RunRecord) -> dict[str, object]:
+    return {
         "model": record.model,
         "dataset": record.dataset,
         **record.metrics.to_dict(),
         **record.timing,
         "epochs_run": record.epochs_run,
     }
-    table = wandb.Table(columns=list(metrics_row.keys()), data=[list(metrics_row.values())])
-    wandb.log({f"results/{record.model}": table})
+
+
+def _log_curves_to_wandb(record: RunRecord) -> None:
+    # Imported lazily so the unused-without-flag path stays free of the dep.
+    import wandb  # type: ignore[import-not-found]
+
     for epoch, (tr, va) in enumerate(
         zip(record.head_train_curve, record.head_val_curve, strict=False)
     ):
@@ -80,3 +83,14 @@ def _log_to_wandb(run: object, record: RunRecord) -> None:
                 "epoch": epoch,
             }
         )
+
+
+def _log_results_table(records: list[RunRecord]) -> None:
+    """Log one results table for the whole run (one row per model), not N tables."""
+    if not records:
+        return
+    import wandb  # type: ignore[import-not-found]
+
+    columns = list(_result_row(records[0]).keys())
+    data = [[_result_row(r)[c] for c in columns] for r in records]
+    wandb.log({"results": wandb.Table(columns=columns, data=data)})

@@ -76,4 +76,4 @@ Results land in `runs/$SLURM_JOB_ID/results.jsonl` — one line per `(dataset, m
 - **ty** — Astral's type checker (pre-1.0; swap to pyright with one config change if needed)
 - **pytest** — smoke + critical-path tests only; no coverage gate. Tests marked `integration` (one real-model end-to-end smoke) need network + heavier deps and are skipped by default and in CI; run them with `uv run pytest -m integration`.
 - **pre-commit** — runs `ruff check --fix` and `ruff format` on every commit
-- **GitHub Actions** — runs `make check` on push and PR
+- **GitHub Actions** — runs `make check` on every pull request

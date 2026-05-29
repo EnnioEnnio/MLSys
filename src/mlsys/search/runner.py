@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from mlsys.datasets.registry import REQUIRED_SPLITS
 from mlsys.head import HeadTrainConfig, train_head
 from mlsys.models.registry import ModelSpec, build_backbone
 from mlsys.search.metrics import RegressionMetrics, regression_metrics
@@ -15,6 +16,7 @@ from mlsys.search.timing import Timer, reset_peak_gpu_memory
 
 if TYPE_CHECKING:
     from mlsys.datasets import LoadedDataset, Row
+    from mlsys.models.backbone import Backbone
 
 
 @dataclass
@@ -43,7 +45,7 @@ class RunRecord:
 
 
 def _embed_split(
-    backbone: Any,
+    backbone: Backbone,
     split: Iterable[Row],
     batch_size: int,
     device: str,
@@ -92,14 +94,14 @@ def score_candidate(
         backbone = build_backbone(spec, device=device)
 
     with timer.section("prepare_data_s"):
-        train_split = dataset.split("train")
-        val_split = dataset.split("val")
-        test_split = dataset.split("test")
+        # Materialise here so per-row text_template rendering (lazy in
+        # _SplitView.__iter__) is attributed to prepare_data_s, not inference_s.
+        rows = {split: list(dataset.split(split)) for split in REQUIRED_SPLITS}
 
     with timer.section("inference_s"):
-        x_train, y_train = _embed_split(backbone, train_split, batch_size, device)
-        x_val, y_val = _embed_split(backbone, val_split, batch_size, device)
-        x_test, y_test = _embed_split(backbone, test_split, batch_size, device)
+        x_train, y_train = _embed_split(backbone, rows["train"], batch_size, device)
+        x_val, y_val = _embed_split(backbone, rows["val"], batch_size, device)
+        x_test, y_test = _embed_split(backbone, rows["test"], batch_size, device)
 
     with timer.section("train_head_s"):
         result = train_head(x_train, y_train, x_val, y_val, head_config)

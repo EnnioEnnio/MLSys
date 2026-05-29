@@ -16,6 +16,10 @@
 # IMPORTANT: Update REPO_PATH below to match your cluster home directory path.
 # NOTE: Excludes V100 GPUs (CUDA 7.0) since PyTorch 25.01 requires CUDA capability >= 7.5.
 
+# Fail loudly: any unset var, failed command, or broken pipe aborts the job
+# non-zero so SLURM/CI don't treat a failed setup as success.
+set -euo pipefail
+
 REPO_PATH=/sc/home/<YOUR_USERNAME>/mlsys
 
 echo "Starting mlsys search job"
@@ -31,7 +35,11 @@ srun --container-image="nvcr.io#nvidia/pytorch:25.01-py3" \
      --container-name=$CONTAINER_NAME \
      --container-writable \
      --container-mounts=$REPO_PATH:/workspace \
-     bash -c "pip list 2>/dev/null | grep -q '^sentence-transformers' || pip install --no-cache-dir transformers datasets sentence-transformers model2vec accelerate huggingface_hub pyyaml scipy tqdm wandb 2>&1 | grep -v 'DEPRECATION\|Loading egg'; pip install --no-cache-dir -e /workspace"
+     bash -c 'set -euo pipefail; \
+       pip list 2>/dev/null | grep -q "^sentence-transformers" || \
+         pip install --no-cache-dir transformers datasets sentence-transformers model2vec \
+           accelerate huggingface_hub pyyaml scipy tqdm wandb python-dotenv; \
+       pip install --no-cache-dir -e /workspace'
 
 # Step 2: Run model search
 echo "Running model search..."

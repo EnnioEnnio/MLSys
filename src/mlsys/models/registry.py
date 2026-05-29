@@ -45,12 +45,17 @@ def load_specs(path: Path | None = None) -> dict[str, ModelSpec]:
                 f"models.yaml entry {entry['name']!r} has unknown loader "
                 f"{entry['loader']!r}; known: {KNOWN_LOADERS}"
             )
+        dim = int(entry["embedding_dim"])
+        if dim <= 0:
+            raise ValueError(
+                f"models.yaml entry {entry['name']!r}: embedding_dim must be > 0, got {dim}"
+            )
         known = {*REQUIRED_FIELDS, "pooling", "max_length", "input_prefix"}
         spec = ModelSpec(
             name=entry["name"],
             hf_repo=entry["hf_repo"],
             loader=entry["loader"],
-            embedding_dim=int(entry["embedding_dim"]),
+            embedding_dim=dim,
             pooling=entry.get("pooling", "builtin"),
             max_length=entry.get("max_length"),
             input_prefix=entry.get("input_prefix", "") or "",
@@ -76,14 +81,25 @@ def register_adapter(loader: str, builder: Callable[[ModelSpec, str], Backbone])
     _ADAPTERS[loader] = builder
 
 
-def _ensure_adapters_registered() -> None:
-    if _ADAPTERS:
-        return
-    # Imports register adapters via register_adapter() at import time.
-    import importlib
+_BUILTINS_IMPORTED = False
 
-    for mod in ("sentence_transformers", "transformers_encoder", "model2vec"):
-        importlib.import_module(f"mlsys.models.adapters.{mod}")
+
+def _ensure_adapters_registered() -> None:
+    # Auto-discover every module in the adapters package; each registers itself
+    # via register_adapter() at import time. Flag-guarded (not keyed off whether
+    # _ADAPTERS is non-empty) so a peer calling register_adapter() before the
+    # first build_backbone() can't suppress the built-ins.
+    global _BUILTINS_IMPORTED
+    if _BUILTINS_IMPORTED:
+        return
+    import importlib
+    import pkgutil
+
+    from mlsys.models import adapters
+
+    for mod in pkgutil.iter_modules(adapters.__path__):
+        importlib.import_module(f"{adapters.__name__}.{mod.name}")
+    _BUILTINS_IMPORTED = True
 
 
 def build_backbone(spec: ModelSpec, device: str = "cpu") -> Backbone:

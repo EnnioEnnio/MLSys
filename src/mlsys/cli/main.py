@@ -59,6 +59,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Load a local .env (e.g. WANDB_API_KEY) before any --wandb branch. Guarded so
+    # the tool still runs if python-dotenv isn't installed; on the cluster the key
+    # comes from the exported shell env, not .env.
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+
     args = _build_parser().parse_args(argv)
 
     if args.command == "list-models":

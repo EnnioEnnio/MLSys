@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Never
+
 import pytest
 
 from mlsys.datasets.registry import load_specs as load_dataset_specs
-from mlsys.models.registry import _ADAPTERS, KNOWN_LOADERS, _ensure_adapters_registered
+from mlsys.models.registry import (
+    _ADAPTERS,
+    KNOWN_LOADERS,
+    _ensure_adapters_registered,
+    register_adapter,
+)
 from mlsys.models.registry import load_specs as load_model_specs
 
 
@@ -63,6 +70,25 @@ def test_every_models_yaml_loader_has_a_registered_adapter() -> None:
     _ensure_adapters_registered()
     for spec in load_model_specs().values():
         assert spec.loader in _ADAPTERS, f"{spec.name}: no adapter for loader {spec.loader!r}"
+
+
+def test_load_specs_accepts_newly_registered_loader(tmp_path) -> None:
+    # Extension-workflow regression guard: a freshly registered adapter's loader
+    # must pass load_specs() validation with no edit to registry.py (matches the
+    # README's "dropping the file is the whole step" claim).
+    def _unused_builder(spec, device) -> Never:  # load_specs validates, never builds
+        raise AssertionError("load_specs must not instantiate adapters")
+
+    register_adapter("dummy_loader_xyz", _unused_builder)
+    try:
+        cfg = tmp_path / "models.yaml"
+        cfg.write_text(
+            "- name: x\n  hf_repo: y/z\n  loader: dummy_loader_xyz\n  embedding_dim: 8\n"
+        )
+        specs = load_model_specs(cfg)
+        assert specs["x"].loader == "dummy_loader_xyz"
+    finally:
+        _ADAPTERS.pop("dummy_loader_xyz", None)
 
 
 def test_datasets_yaml_rejects_missing_field(tmp_path) -> None:

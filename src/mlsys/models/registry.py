@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     from mlsys.models.backbone import Backbone
 
 REQUIRED_FIELDS = ("name", "hf_repo", "loader", "embedding_dim")
+# The built-in loaders, kept for reference/error messages. Loader validation in
+# load_specs() is dynamic against the *registered* adapter set, so dropping a new
+# self-registering adapter module in adapters/ is enough — no edit here required.
 KNOWN_LOADERS = ("sentence_transformers", "transformers_encoder", "model2vec")
 
 
@@ -35,15 +38,18 @@ def _config_path() -> Path:
 def load_specs(path: Path | None = None) -> dict[str, ModelSpec]:
     cfg_path = path or _config_path()
     raw = yaml.safe_load(cfg_path.read_text()) or []
+    # Validate loaders against the registered adapters (not a static list) so a
+    # newly dropped adapter file resolves at config-load time without editing here.
+    _ensure_adapters_registered()
     specs: dict[str, ModelSpec] = {}
     for entry in raw:
         for field_name in REQUIRED_FIELDS:
             if field_name not in entry:
                 raise ValueError(f"models.yaml entry missing {field_name!r}: {entry}")
-        if entry["loader"] not in KNOWN_LOADERS:
+        if entry["loader"] not in _ADAPTERS:
             raise ValueError(
                 f"models.yaml entry {entry['name']!r} has unknown loader "
-                f"{entry['loader']!r}; known: {KNOWN_LOADERS}"
+                f"{entry['loader']!r}; registered: {sorted(_ADAPTERS)}"
             )
         dim = int(entry["embedding_dim"])
         if dim <= 0:

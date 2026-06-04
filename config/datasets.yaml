@@ -7,3 +7,14 @@
   target_column: points
   target_type: regression
   text_template: "description: {description}, variety: {variety}, country: {country}, price: {price} USD"
+
+- name: usa_real_estate
+  hf_repo: jason1966/ahmedshahriarsakib_usa-real-estate-dataset
+  splits:
+    train: "train[:80%]"
+    val: "train[80%:90%]"
+    test: "train[90%:]"
+  target_column: price
+  target_type: regression
+  text_template: "status: {status}, bed: {bed}, bath: {bath}, acre_lot: {acre_lot}, street: {street}, city: {city}, state: {state}, zip_code: {zip_code}, house_size: {house_size}, prev_sold_date: {prev_sold_date}"
+

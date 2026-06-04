@@ -56,8 +56,15 @@ class _SplitView:
         template = self.spec.text_template
         target_col = self.spec.target_column
         for row in self.hf_split:
+            target_val = row[target_col]
+            if target_val is None:
+                continue
+            try:
+                target_float = float(target_val)
+            except (ValueError, TypeError):
+                continue
             text = render_template(template, row)
-            yield Row(text=text, target=float(row[target_col]))
+            yield Row(text=text, target=target_float)
 
     def __len__(self) -> int:
         return len(self.hf_split)

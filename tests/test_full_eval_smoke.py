@@ -70,7 +70,9 @@ class _FakeDataset:
             text_template="{text}",
         )
         self.splits = {
-            "train": _FakeSplit([Row(text=f"t{i}", target=float(i)) for i in range(n_per_split)]),
+            "train": _FakeSplit(
+                [Row(text=f"t{i}", target=float(i)) for i in range(n_per_split)]
+            ),
             "val": _FakeSplit(
                 [Row(text=f"v{i}", target=float(i)) for i in range(n_per_split // 2)]
             ),

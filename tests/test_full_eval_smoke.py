@@ -34,7 +34,7 @@ class _FakeBackbone:
         torch.manual_seed(0)
         self._proj = torch.randn(64, spec.embedding_dim)
 
-    def encode(self, texts: list[str]) -> torch.Tensor:
+    def encode(self, texts: list[str]):
         # Map each text to a deterministic vector via a hash → one-hot → projection.
         rows = []
         for t in texts:

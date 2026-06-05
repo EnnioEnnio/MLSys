@@ -42,12 +42,16 @@ tests/                # CPU-only smoke + unit tests
 - `python -m mlsys list-models` — dumps `config/models.yaml` entries.
 - `python -m mlsys list-datasets` — dumps `config/datasets.yaml` entries.
 
+### W&B logging (`--wandb`)
+
+`--wandb` needs `WANDB_API_KEY`. For local runs, copy `.env.example` to `.env` and fill it in — `python -m mlsys` auto-loads `.env` via `python-dotenv`. `.env` is gitignored; never commit a real key. On the cluster the key is read from the exported shell env instead (see [Running on the cluster](#running-on-the-cluster)).
+
 ## Adding a new model
 
 - Append one row to `config/models.yaml` with `name`, `hf_repo`, `loader`, `pooling`, `embedding_dim`, `max_length` (optional `input_prefix`).
 - Pick `loader` from `sentence_transformers`, `transformers_encoder`, or `model2vec`.
 - For a finetune of an existing architecture, that's literally all — share `loader`/`pooling`/`embedding_dim`/`max_length` and just bump `name` + `hf_repo`.
-- For a new architecture family (different loader path, custom pooling), add an adapter under `src/mlsys/models/adapters/` and register it with `register_adapter(...)`.
+- For a new architecture family (different loader path, custom pooling), drop an adapter module under `src/mlsys/models/adapters/` that calls `register_adapter("your_loader", _build)` at import time. The package is auto-discovered — adding the file is the whole step; no edit to `models/registry.py` is needed.
 
 ## Adding a new dataset
 
@@ -57,7 +61,7 @@ tests/                # CPU-only smoke + unit tests
 
 ## Running on the cluster
 
-Edit `slurm/search.slurm` — set `REPO_PATH` to your cluster checkout, set `--mail-user`, and (if you want W&B logging) export `WANDB_API_KEY` so `--container-env=WANDB_API_KEY` can forward it. Then:
+Edit `slurm/search.slurm` — set `REPO_PATH` to your cluster checkout, set `--mail-user`, and (if you want W&B logging) `export WANDB_API_KEY` in your shell **before** `sbatch` so `--container-env=WANDB_API_KEY` can forward it. The cluster does not read `.env` (that's local-only), so the variable must be exported. Then:
 
 ```bash
 sbatch slurm/search.slurm
@@ -70,6 +74,6 @@ Results land in `runs/$SLURM_JOB_ID/results.jsonl` — one line per `(dataset, m
 - **uv** — package manager and task runner; deps locked in `uv.lock`
 - **ruff** — linter and formatter (replaces black + flake8)
 - **ty** — Astral's type checker (pre-1.0; swap to pyright with one config change if needed)
-- **pytest** — smoke + critical-path tests only; no coverage gate
+- **pytest** — smoke + critical-path tests only; no coverage gate. Tests marked `integration` (one real-model end-to-end smoke) need network + heavier deps and are skipped by default and in CI; run them with `uv run pytest -m integration`.
 - **pre-commit** — runs `ruff check --fix` and `ruff format` on every commit
-- **GitHub Actions** — runs `make check` on push and PR
+- **GitHub Actions** — runs `make check` on every pull request

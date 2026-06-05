@@ -13,6 +13,18 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 
+def _cuda_sync() -> None:
+    """Block until queued CUDA kernels finish, so wall-clock deltas and peak-memory
+    reads cover completed work. No-op when torch/CUDA is absent (CPU test path)."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+    except ImportError:
+        pass
+
+
 @dataclass
 class TimingBreakdown:
     prepare_model_s: float = 0.0
@@ -44,10 +56,12 @@ class Timer:
 
     @contextmanager
     def section(self, name: str):
+        _cuda_sync()
         start = time.perf_counter()
         try:
             yield
         finally:
+            _cuda_sync()
             elapsed = time.perf_counter() - start
             if hasattr(self.breakdown, name):
                 setattr(self.breakdown, name, getattr(self.breakdown, name) + elapsed)
@@ -59,6 +73,7 @@ class Timer:
             import torch
 
             if torch.cuda.is_available():
+                torch.cuda.synchronize()
                 self.breakdown.peak_gpu_mem_mb = float(
                     torch.cuda.max_memory_allocated() / (1024 * 1024)
                 )

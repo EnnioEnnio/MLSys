@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import torch
@@ -48,12 +49,12 @@ class HeadTrainResult:
 
 def _iter_minibatches(
     x: torch.Tensor, y: torch.Tensor, batch_size: int, shuffle: bool
-) -> list[tuple[torch.Tensor, torch.Tensor]]:
+) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
     n = x.size(0)
     idx = torch.randperm(n, device=x.device) if shuffle else torch.arange(n, device=x.device)
-    return [
-        (x[idx[s : s + batch_size]], y[idx[s : s + batch_size]]) for s in range(0, n, batch_size)
-    ]
+    for s in range(0, n, batch_size):
+        sl = idx[s : s + batch_size]
+        yield x[sl], y[sl]
 
 
 def train_head(
@@ -66,6 +67,12 @@ def train_head(
     """Train an FCHead with AdamW + MSE, early-stop on val-MSE plateau."""
     if config is None:
         config = HeadTrainConfig()
+    if x_train.size(0) == 0 or x_val.size(0) == 0:
+        raise ValueError(
+            "train_head requires non-empty train and val tensors; got "
+            f"{x_train.size(0)} train and {x_val.size(0)} val rows "
+            "(check the dataset splits aren't empty after loading/filtering)"
+        )
     device = x_train.device
     head = FCHead(in_dim=x_train.size(1), hidden=config.hidden).to(device)
     optim = torch.optim.AdamW(head.parameters(), lr=config.lr, weight_decay=config.weight_decay)

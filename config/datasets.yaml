@@ -7,3 +7,13 @@
   target_column: points
   target_type: regression
   text_template: "description: {description}, variety: {variety}, country: {country}, price: {price} USD"
+
+- name: california_housing
+  hf_repo: gvlassis/california_housing
+  splits:
+    train: train
+    val: validation
+    test: test
+  target_column: MedHouseVal
+  target_type: regression
+  text_template: "MedInc: {MedInc}, HouseAge: {HouseAge}, AveRooms: {AveRooms}, AveBedrms: {AveBedrms}, Population: {Population}, AveOccup: {AveOccup}, Latitude: {Latitude}, Longitude: {Longitude}"

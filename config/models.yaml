@@ -34,42 +34,42 @@
 - name: facebook-bart-base
   hf_repo: facebook/bart-base
   loader: transformers_encoder
-  pooling: builtin
+  pooling: mean
   embedding_dim: 768
   max_length: 1024
 
 - name: bart-base-mini
   hf_repo: GuysTrans/bart-base-mini
   loader: transformers_encoder
-  pooling: builtin
+  pooling: mean
   embedding_dim: 768
   max_length: 1024
 
 - name: bart-base-job-info-summarizer
   hf_repo: avisena/bart-base-job-info-summarizer
   loader: transformers_encoder
-  pooling: builtin
+  pooling: mean
   embedding_dim: 768
   max_length: 1024
 
 - name: distilbart-cnn-12-6
   hf_repo: sshleifer/distilbart-cnn-12-6
   loader: transformers_encoder
-  pooling: builtin
+  pooling: mean
   embedding_dim: 1024
   max_length: 1024
 
 - name: distilbart-news-summarizer
   hf_repo: Sachin21112004/distilbart-news-summarizer
   loader: transformers_encoder
-  pooling: builtin
+  pooling: mean
   embedding_dim: 1024
   max_length: 1024
 
 - name: distilbart-cnn-6-6
   hf_repo: sshleifer/distilbart-cnn-6-6
   loader: transformers_encoder
-  pooling: builtin
+  pooling: mean
   embedding_dim: 1024
   max_length: 1024
 

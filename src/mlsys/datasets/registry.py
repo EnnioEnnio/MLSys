@@ -16,6 +16,9 @@ REQUIRED_FIELDS = (
     "target_type",
     "text_template",
 )
+# The logical splits score_candidate() always requests. Validated here at load
+# time and referenced from mlsys.search.runner so the two can't drift.
+REQUIRED_SPLITS = ("train", "val", "test")
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,9 @@ def load_specs(path: Path | None = None) -> dict[str, DatasetSpec]:
             raise ValueError(
                 f"v1 supports target_type=regression only; got {entry['target_type']!r}"
             )
+        missing = [s for s in REQUIRED_SPLITS if s not in entry["splits"]]
+        if missing:
+            raise ValueError(f"datasets.yaml entry {entry['name']!r}: missing split(s) {missing}")
         spec = DatasetSpec(
             name=entry["name"],
             hf_repo=entry["hf_repo"],

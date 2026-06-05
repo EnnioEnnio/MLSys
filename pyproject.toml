@@ -9,6 +9,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "torch",
     "transformers",
+    "accelerate",
     "datasets",
     "sentence-transformers",
     "model2vec",
@@ -18,6 +19,7 @@ dependencies = [
     "scipy",
     "tqdm",
     "wandb",
+    "python-dotenv",
 ]
 
 [project.scripts]
@@ -44,3 +46,9 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Integration tests download real models / need network; skipped by default and
+# in CI. Run them explicitly with `uv run pytest -m integration`.
+addopts = "-m 'not integration'"
+markers = [
+    "integration: real-model end-to-end smoke; needs network + heavier deps",
+]

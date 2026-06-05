@@ -8,7 +8,7 @@ Cluster launch for `mlsys search`.
    - `REPO_PATH` → your cluster checkout path (e.g. `/sc/home/<you>/mlsys`).
    - `--mail-user` → your slack handle.
    - `-A {account_name}` → your SLURM account.
-2. Put your W&B key in your shell rc as `export WANDB_API_KEY=...` (the script forwards it via `--container-env`). Skip if you don't pass `--wandb`.
+2. Put your W&B key in your shell rc as `export WANDB_API_KEY=...` (the script forwards it via `--container-env`). The cluster does **not** read a local `.env` file — the variable must be exported in the shell before `sbatch`. Skip if you don't pass `--wandb`.
 
 ## Launch
 

@@ -29,3 +29,14 @@ def test_head_converges_below_noise_floor() -> None:
         f"head failed to converge: val_mse={result.best_val_mse:.4f} noise_var={noise_var:.4f}"
     )
     assert len(result.train_curve) == result.epochs_run
+
+
+def test_train_head_rejects_empty_split() -> None:
+    # An empty train or val split would otherwise yield silent NaN val-loss; fail fast.
+    empty_x, empty_y = torch.randn(0, 8), torch.zeros(0)
+    x, y = torch.randn(4, 8), torch.randn(4)
+    cfg = HeadTrainConfig(epochs=1)
+    with pytest.raises(ValueError, match="non-empty"):
+        train_head(empty_x, empty_y, x, y, cfg)
+    with pytest.raises(ValueError, match="non-empty"):
+        train_head(x, y, empty_x, empty_y, cfg)

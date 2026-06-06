@@ -74,9 +74,15 @@ class _SplitView:
             total = len(self.hf_split)
             filtered = sum(1 for _ in self)
             dropped = total - filtered
-            log.info("Loaded %d/%d rows (%d dropped due to missing/invalid targets)", filtered, total, dropped)
+            log.info(
+                "Loaded %d/%d rows (%d dropped due to missing/invalid targets)",
+                filtered, total, dropped,
+            )
             if dropped == total:
-                log.warning("All %d rows were dropped — check target_column %r", total, self.spec.target_column)
+                log.warning(
+                    "All %d rows were dropped — check target_column %r",
+                    total, self.spec.target_column,
+                )
             self._filtered_len = filtered
         return self._filtered_len
 

@@ -33,7 +33,7 @@ packages = ["src/mlsys"]
 [dependency-groups]
 dev = [
     "pytest>=8.0",
-    "ruff==0.9.10",
+    "ruff>=0.9.10",
     "ty>=0.0.33",
     "pre-commit>=4.0",
 ]

@@ -17,7 +17,9 @@ typecheck:
 test:
 	uv run pytest -q
 
-check: lint typecheck test
+check: 
+	lint typecheck test
+	uv run ruff format --check .
 
 clean:
 	rm -rf .venv .ruff_cache .pytest_cache __pycache__ src/mlsys.egg-info

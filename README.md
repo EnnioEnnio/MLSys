@@ -7,14 +7,14 @@ Seminar project at HPI. Take a regression dataset, build a candidate pool of Hug
 Requires [`uv`](https://github.com/astral-sh/uv) installed on your machine.
 
 ```bash
-make setup   # uv sync + pre-commit install
+make setup   # uv sync
 ```
 
 ## Common commands
 
 | Command           | What it does                          |
 |-------------------|---------------------------------------|
-| `make setup`      | Install deps + pre-commit hooks       |
+| `make setup`      | Install deps                          |
 | `make lint`       | Run ruff linter                       |
 | `make format`     | Run ruff formatter + auto-fix         |
 | `make typecheck`  | Run ty type checker                   |
@@ -75,5 +75,4 @@ Results land in `runs/$SLURM_JOB_ID/results.jsonl` — one line per `(dataset, m
 - **ruff** — linter and formatter (replaces black + flake8)
 - **ty** — Astral's type checker (pre-1.0; swap to pyright with one config change if needed)
 - **pytest** — smoke + critical-path tests only; no coverage gate. Tests marked `integration` (one real-model end-to-end smoke) need network + heavier deps and are skipped by default and in CI; run them with `uv run pytest -m integration`.
-- **pre-commit** — runs `ruff check --fix` and `ruff format` on every commit
 - **GitHub Actions** — runs `make check` on every pull request

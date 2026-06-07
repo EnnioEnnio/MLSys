@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from mlsys.cli.main import main
+from mlsys.cli import main
 
 
 def test_list_models_prints_seed_pool(capsys) -> None:
@@ -41,7 +41,14 @@ def test_python_dash_m_returns_nonzero_on_bad_args() -> None:
     # P3 regression guard: `raise SystemExit(main())` must propagate a failure as a
     # non-zero process exit code (SLURM/CI rely on it).
     proc = subprocess.run(
-        [sys.executable, "-m", "mlsys", "search", "--dataset", "definitely-not-a-dataset"],
+        [
+            sys.executable,
+            "-m",
+            "mlsys",
+            "search",
+            "--dataset",
+            "definitely-not-a-dataset",
+        ],
         capture_output=True,
         text=True,
     )

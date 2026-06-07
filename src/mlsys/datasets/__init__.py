@@ -76,12 +76,15 @@ class _SplitView:
             dropped = total - filtered
             log.info(
                 "Loaded %d/%d rows (%d dropped due to missing/invalid targets)",
-                filtered, total, dropped,
+                filtered,
+                total,
+                dropped,
             )
             if dropped == total:
                 log.warning(
                     "All %d rows were dropped — check target_column %r",
-                    total, self.spec.target_column,
+                    total,
+                    self.spec.target_column,
                 )
             self._filtered_len = filtered
         return self._filtered_len

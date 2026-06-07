@@ -20,6 +20,8 @@ dependencies = [
     "tqdm",
     "wandb",
     "python-dotenv",
+    "sentencepiece",
+    "protobuf",
 ]
 
 [project.scripts]

@@ -28,3 +28,25 @@
   pooling: builtin
   embedding_dim: 512
   max_length: null
+
+- name: deberta-v3-small
+  hf_repo: microsoft/deberta-v3-small
+  loader: transformers_encoder
+  pooling: mean
+  embedding_dim: 768
+  max_length: 512
+
+- name: modernbert-base
+  hf_repo: answerdotai/ModernBERT-base
+  loader: transformers_encoder
+  pooling: mean
+  embedding_dim: 768
+  max_length: 512
+
+- name: distilbert-base-uncased
+  hf_repo: distilbert-base-uncased
+  loader: transformers_encoder
+  pooling: mean
+  embedding_dim: 768
+  max_length: 512
+

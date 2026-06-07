@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from mlsys.datasets.registry import DatasetSpec, get_spec, load_specs
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "DatasetSpec",
@@ -51,16 +54,37 @@ class LoadedDataset:
 class _SplitView:
     spec: DatasetSpec
     hf_split: Any  # datasets.Dataset; kept untyped to avoid hard import at module load
+    _filtered_len: int | None = field(default=None, init=False, repr=False)
 
     def __iter__(self) -> Iterator[Row]:
         template = self.spec.text_template
         target_col = self.spec.target_column
         for row in self.hf_split:
-            text = render_template(template, row)
-            yield Row(text=text, target=float(row[target_col]))
+            target_val = row[target_col]
+            if target_val is None:
+                continue
+            try:
+                target_float = float(target_val)
+            except (ValueError, TypeError):
+                continue
+            yield Row(text=render_template(template, row), target=target_float)
 
     def __len__(self) -> int:
-        return len(self.hf_split)
+        if self._filtered_len is None:
+            total = len(self.hf_split)
+            filtered = sum(1 for _ in self)
+            dropped = total - filtered
+            log.info(
+                "Loaded %d/%d rows (%d dropped due to missing/invalid targets)",
+                filtered, total, dropped,
+            )
+            if dropped == total:
+                log.warning(
+                    "All %d rows were dropped — check target_column %r",
+                    total, self.spec.target_column,
+                )
+            self._filtered_len = filtered
+        return self._filtered_len
 
     def batched(self, batch_size: int) -> Iterable[list[Row]]:
         batch: list[Row] = []

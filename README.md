@@ -7,14 +7,14 @@ Seminar project at HPI. Take a regression dataset, build a candidate pool of Hug
 Requires [`uv`](https://github.com/astral-sh/uv) installed on your machine.
 
 ```bash
-make setup   # uv sync + pre-commit install
+make setup   # uv sync
 ```
 
 ## Common commands
 
 | Command           | What it does                          |
 |-------------------|---------------------------------------|
-| `make setup`      | Install deps + pre-commit hooks       |
+| `make setup`      | Install deps                          |
 | `make lint`       | Run ruff linter                       |
 | `make format`     | Run ruff formatter + auto-fix         |
 | `make typecheck`  | Run ty type checker                   |

@@ -66,6 +66,7 @@ def _result_row(record: RunRecord) -> dict[str, object]:
         **record.metrics.to_dict(),
         **record.timing,
         "epochs_run": record.epochs_run,
+        **record.extras,
     }
 
 

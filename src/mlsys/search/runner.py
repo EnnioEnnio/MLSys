@@ -77,6 +77,21 @@ def _embed_split(
     return torch.cat(feats, dim=0), torch.tensor(targets, dtype=torch.float32, device=device)
 
 
+def release_gpu_memory(device: str) -> None:
+    """Drop dereferenced GPU tensors and return cached blocks to the allocator.
+
+    Called between candidates so a freed backbone's CUDA memory doesn't linger
+    as reserved/fragmented blocks across the ~N-model loop. Without this the
+    caching allocator accumulates per-model fragments and eventually OOMs on a
+    contiguous allocation even though each candidate's live footprint is small.
+    """
+    import gc
+
+    gc.collect()
+    if device.startswith("cuda") and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def score_candidate(
     dataset: LoadedDataset,
     spec: ModelSpec,

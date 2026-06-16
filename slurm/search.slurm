@@ -57,9 +57,14 @@ pip install --no-cache-dir -e /workspace
 
 # Step 2: Run model search
 echo "Running model search..."
+# expandable_segments lets the CUDA allocator grow/shrink segments instead of
+# locking fixed-size blocks, so reserved memory from one backbone can be reused
+# by the next differently-sized one. Without it the ~N-model loop fragments the
+# GPU and OOMs on a small contiguous allocation. Forwarded into the container.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 srun --container-name=$CONTAINER_NAME \
      --container-mounts=$REPO_PATH:/workspace \
-     --container-env=WANDB_API_KEY \
+     --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF \
      --container-workdir=/workspace \
      python -m mlsys search \
        --dataset wine_reviews \

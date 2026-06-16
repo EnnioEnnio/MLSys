@@ -14,7 +14,7 @@
 # Mirrors generate_embeddings.slurm: NGC base image, reused named container,
 # pip install gated by a `pip list | grep -q` idiom so reruns skip the install.
 # IMPORTANT: Update REPO_PATH below to match your cluster home directory path.
-# NOTE: Excludes V100 GPUs (CUDA 7.0) since PyTorch 25.01 requires CUDA capability >= 7.5.
+# NOTE: Excludes V100 GPUs (CUDA 7.0) since PyTorch 25.03 requires CUDA capability >= 7.5.
 
 # Fail loudly: any unset var, failed command, or broken pipe aborts the job
 # non-zero so SLURM/CI don't treat a failed setup as success.
@@ -30,8 +30,8 @@ nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader
 
 # Step 1: Set up container with dependencies (reuses container across jobs)
 echo "Setting up container with dependencies..."
-CONTAINER_NAME=mlsys-$USER-pytorch2501
-srun --container-image="nvcr.io#nvidia/pytorch:25.01-py3" \
+CONTAINER_NAME=mlsys-$USER-pytorch2503
+srun --container-image="nvcr.io#nvidia/pytorch:25.03-py3" \
      --container-name=$CONTAINER_NAME \
      --container-writable \
      --container-mounts=$REPO_PATH:/workspace \

@@ -29,12 +29,12 @@ class FCHead(nn.Module):
 
 @dataclass(frozen=True)
 class HeadTrainConfig:
-    epochs: int = 10
+    epochs: int = 30
     batch_size: int = 256
     lr: float = 1e-3
     weight_decay: float = 1e-4
     early_stop_patience: int = 3
-    min_delta: float = 1e-4
+    min_delta: float = 1e-3
     hidden: int | None = None
 
 

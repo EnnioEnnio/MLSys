@@ -16,8 +16,7 @@ typecheck:
 test:
 	uv run pytest -q
 
-check: 
-	lint typecheck test
+check: lint typecheck test
 	uv run ruff format --check .
 
 clean:

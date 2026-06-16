@@ -22,7 +22,7 @@
 # non-zero so SLURM/CI don't treat a failed setup as success.
 set -euo pipefail
 
-REPO_PATH=/sc/home/<YOUR_USERNAME>/mlsys
+REPO_PATH=/sc/projects/<GROUP>/<Project>/<*Path>
 
 echo "Starting mlsys search job"
 echo "Job ID: $SLURM_JOB_ID"

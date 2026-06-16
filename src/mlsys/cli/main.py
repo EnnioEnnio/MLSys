@@ -30,9 +30,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     search = sub.add_parser("search", help="Run a model search over a dataset.")
-    search.add_argument(
-        "--dataset", required=True, help="dataset name from config/datasets.yaml"
-    )
+    search.add_argument("--dataset", required=True, help="dataset name from config/datasets.yaml")
     search.add_argument(
         "--models",
         default=None,
@@ -44,7 +42,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="run directory; default runs/<unix-ts>",
     )
-    search.add_argument("--epochs", type=int, default=10)
+    search.add_argument("--epochs", type=int, default=HeadTrainConfig.epochs)
     search.add_argument("--batch-size", type=int, default=64)
     search.add_argument("--device", default=None, help="cpu|cuda; default auto-detect")
     search.add_argument("--wandb", action="store_true", help="opt-in W&B logging")
@@ -96,9 +94,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_search(args: argparse.Namespace) -> int:
-    output_dir = (
-        Path(args.output_dir) if args.output_dir else Path(f"runs/{int(time.time())}")
-    )
+    output_dir = Path(args.output_dir) if args.output_dir else Path(f"runs/{int(time.time())}")
     device = args.device or _default_device()
 
     if args.cache_embeddings:

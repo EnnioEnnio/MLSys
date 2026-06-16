@@ -123,6 +123,7 @@ def score_candidate(
         epochs_run=result.epochs_run,
         extras={
             "embedding_dim": spec.embedding_dim,
-            "head_type": "linear" if head_config.hidden is None else "mlp",
+            # Mirror FCHead's own linear/mlp decision (hidden None *or* <= 0 -> linear).
+            "head_type": "mlp" if head_config.hidden and head_config.hidden > 0 else "linear",
         },
     )

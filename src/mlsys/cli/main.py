@@ -113,6 +113,7 @@ def _run_search(args: argparse.Namespace) -> int:
         import wandb  # type: ignore[import-not-found]
 
         wandb_run = wandb.init(
+            entity="HPI_MLSys_2026",
             project="mlsys-model-search",
             name=output_dir.name,
             config={

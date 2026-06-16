@@ -12,9 +12,9 @@
 
 # Runs `python -m mlsys search` against config/datasets.yaml + config/models.yaml.
 # NGC base image + reused named container. Deps come from pyproject.toml via
-# `pip install -e /workspace`, which runs every job and upgrades anything that
-# violates a pin (e.g. datasets>=3.0). torch/numpy keep the NGC-optimized builds
-# since they're unpinned in pyproject and already present in the image.
+# `pip install -e /workspace`, which runs every job. NGC's pip constraint file
+# (see Step 1) pins pyarrow/dill in a way that blocks modern datasets, so we strip
+# just those two pins before installing; all other NGC pins stay in force.
 # IMPORTANT: Update REPO_PATH below to match your cluster home directory path.
 # NOTE: Excludes V100 GPUs (CUDA 7.0) since PyTorch 25.03 requires CUDA capability >= 7.5.
 
@@ -22,7 +22,7 @@
 # non-zero so SLURM/CI don't treat a failed setup as success.
 set -euo pipefail
 
-REPO_PATH=/sc/home/<YOUR_USERNAME>/mlsys
+REPO_PATH=/sc/projects/<GROUP>/<Project>/<*Path>
 
 echo "Starting mlsys search job"
 echo "Job ID: $SLURM_JOB_ID"
@@ -37,8 +37,23 @@ srun --container-image="nvcr.io#nvidia/pytorch:25.03-py3" \
      --container-name=$CONTAINER_NAME \
      --container-writable \
      --container-mounts=$REPO_PATH:/workspace \
-     bash -c 'set -euo pipefail; \
-       pip install --no-cache-dir -e /workspace'
+     bash -c '
+set -euo pipefail
+
+# NGC PyTorch >=25.03 ships /etc/pip/constraint.txt, which pins pyarrow==19 and
+# dill==0.3.9 for its data-science stack. Modern datasets (>=4.1) needs pyarrow>=21,
+# so those pins make datasets impossible to install. NVIDIA documents the fix as
+# "remove the version constraints for the packages you want to overwrite". We do
+# that on a COPY of the file (never touching the original) and point pip at the copy,
+# so every OTHER NGC pin (numpy, the torch/CUDA stack, ...) stays in force.
+SRC="${PIP_CONSTRAINT:-/etc/pip/constraint.txt}"
+if [ -f "$SRC" ]; then
+  grep -ivE "^(pyarrow|dill)[<>=!~ ]" "$SRC" > /tmp/pip-constraint.txt || true
+  export PIP_CONSTRAINT=/tmp/pip-constraint.txt
+fi
+
+pip install --no-cache-dir -e /workspace
+'
 
 # Step 2: Run model search
 echo "Running model search..."

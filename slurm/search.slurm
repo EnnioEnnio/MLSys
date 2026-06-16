@@ -50,7 +50,8 @@ srun --container-name=$CONTAINER_NAME \
      python -m mlsys search \
        --dataset wine_reviews \
        --strategy full_eval \
-       --output-dir /workspace/runs/$SLURM_JOB_ID
+       --output-dir /workspace/runs/$SLURM_JOB_ID \
+       --wandb
 
 echo "Job completed!"
 echo "Output files:"

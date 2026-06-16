@@ -53,7 +53,7 @@ class TransformersEncoderBackbone:
         if tokenizer is None:
             raise RuntimeError(f"AutoTokenizer returned None for {spec.hf_repo!r}")
         self._tokenizer = tokenizer
-        self._model = AutoModel.from_pretrained(spec.hf_repo).to(device)
+        self._model = AutoModel.from_pretrained(spec.hf_repo, use_safetensors=True).to(device)
         self._model.eval()
         self._torch = torch
 

@@ -52,6 +52,7 @@ tests/                # CPU-only smoke + unit tests
 - Pick `loader` from `sentence_transformers`, `transformers_encoder`, or `model2vec`.
 - For a finetune of an existing architecture, that's literally all — share `loader`/`pooling`/`embedding_dim`/`max_length` and just bump `name` + `hf_repo`.
 - For a new architecture family (different loader path, custom pooling), drop an adapter module under `src/mlsys/models/adapters/` that calls `register_adapter("your_loader", _build)` at import time. The package is auto-discovered — adding the file is the whole step; no edit to `models/registry.py` is needed.
+- Don't forget to add the model to the pool table in this README, with notes on why it's interesting and what it adds to the variety of the search space.
 
 ## Adding a new dataset
 

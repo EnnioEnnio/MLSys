@@ -76,3 +76,26 @@ Results land in `runs/$SLURM_JOB_ID/results.jsonl` — one line per `(dataset, m
 - **ty** — Astral's type checker (pre-1.0; swap to pyright with one config change if needed)
 - **pytest** — smoke + critical-path tests only; no coverage gate. Tests marked `integration` (one real-model end-to-end smoke) need network + heavier deps and are skipped by default and in CI; run them with `uv run pytest -m integration`.
 - **GitHub Actions** — runs `make check` on every pull request
+
+## Model pool
+
+| Name | Family / Architecture | Size | D/m | FT | Comments |
+| :---- | :---- | :---- | :---- | :---- | :---- |
+| [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) | Distilled 6-layer encoder, mean-pool (built-in), 384-dim | ~23M | 260M | 900 | Most-used model on HF |
+| [all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2) | MPNet (masking + permutation order), mean-pool (built-in), 768-dim | ~100M | 35M | 350 | Slower, more accurate sibling |
+| [potion-base-8M](https://huggingface.co/minishlab/potion-base-8M) | Static lookup table (model2vec), no attention, ignores word order, 256-dim | ~8M | 710k | 5 | Extreme low-cost anchor; ~500× faster on CPU |
+| [potion-base-32M](https://huggingface.co/minishlab/potion-base-32M) | Static lookup table (model2vec), 512-dim | ~32M | 84k | 4 | Larger static variant for the cost axis |
+| [distilbert-base-uncased](https://huggingface.co/distilbert/distilbert-base-uncased) | 6-layer distilled BERT, mean-pool, 768-dim | ~66M | ~25M | ~3k | Distilled BERT; fast CPU baseline |
+| [deberta-v3-small](https://huggingface.co/microsoft/deberta-v3-small) | Disentangled attention + ELECTRA-style objective, mean-pool, 768-dim | ~44M | ~1M | ~150 | Lighter DeBERTa variant |
+| [modernbert-base](https://huggingface.co/answerdotai/ModernBERT-base) | Modernized BERT (RoPE, local/global attn, 8k ctx), mean-pool, 768-dim | ~150M | 1.8M | 1200 | Current-gen encoder, huge finetune tree |
+| [roberta-base](https://huggingface.co/FacebookAI/roberta-base) | BERT-family, tuned recipe, mean-pool, 768-dim | ~100M | 17M | 2300 | Plain strong encoder baseline |
+| [deberta-v3-base](https://huggingface.co/microsoft/deberta-v3-base) | Disentangled attention + ELECTRA-style objective, mean-pool, 768-dim | ? | 3M | 600 | Strongest base-size encoder for accuracy |
+| [electra-base-discriminator](https://huggingface.co/google/electra-base-discriminator) | Encoder trained as real/fake token detector, mean-pool, 768-dim | ? | 56M | 70 | Different pretraining game, sample-efficient |
+| [albert-base-v2](https://huggingface.co/albert/albert-base-v2) | Cross-layer weight sharing + factorized embeddings, mean-pool, 768-dim | ~12M | 680k | 260 | Many effective layers, tiny footprint |
+| [e5-base-v2](https://huggingface.co/intfloat/e5-base-v2) | Contrastive encoder, mean-pool, needs `query:` prefix, 768-dim | ~110M | 2M | 75 | Prefix quirk = realistic prepare-model cost (RQ2) |
+| [bge-base-en-v1.5](https://huggingface.co/BAAI/bge-base-en-v1.5) | Contrastive encoder, CLS-pool, 768-dim | ~100M | 10M | 450 | Top retrieval embedder |
+| [modernbert-embed-base](https://huggingface.co/nomic-ai/modernbert-embed-base) | ModernBERT backbone, embedding-tuned + Matryoshka, mean-pool, 768-dim | ~150M | 170k | 110 | Pairs w/ modernbert-base → isolates contrastive-tuning effect |
+| [sentence-t5-base](https://huggingface.co/sentence-transformers/sentence-t5-base) | T5 encoder half (encoder-decoder lineage), mean-pool (built-in), 768-dim | ~100M | 210k | 1 | Text-to-text pretraining = architectural variety |
+| [mxbai-embed-large-v1](https://huggingface.co/mixedbread-ai/mxbai-embed-large-v1) | Large contrastive encoder + Matryoshka, 1024-dim | ~300M | 5M | 55 | Large Matryoshka data point |
+| [gte-base-en-v1.5](https://huggingface.co/Alibaba-NLP/gte-base-en-v1.5) | GTE encoder, long ctx + Matryoshka, 768-dim | ~130M | 725k | 830 | Richest finetune tree for variety |
+| [nomic-embed-text-v1.5](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5) | Long-ctx BERT + Matryoshka, needs `search_document:` prefix, 768-dim | ~137M | 17M | 31 | Flagship Matryoshka |

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from mlsys.head import HeadTrainConfig
 from mlsys.io import JsonlWriter, results_path
 from mlsys.models.registry import ModelSpec, load_specs
-from mlsys.search.runner import RunRecord, score_candidate
+from mlsys.search.runner import RunRecord, release_gpu_memory, score_candidate
 
 if TYPE_CHECKING:
     from mlsys.datasets import LoadedDataset
@@ -54,6 +54,9 @@ def full_eval(
             records.append(record)
             if wandb_run is not None:
                 _log_curves_to_wandb(record)
+            # score_candidate's GPU tensors (backbone, embeddings, head) are now
+            # dereferenced; reclaim them so the next candidate starts clean.
+            release_gpu_memory(device)
     if wandb_run is not None:
         _log_results_table(records)
     return records

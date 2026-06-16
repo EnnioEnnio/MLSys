@@ -11,8 +11,10 @@
 #SBATCH --output=slurm-mlsys-search-%j.out
 
 # Runs `python -m mlsys search` against config/datasets.yaml + config/models.yaml.
-# Mirrors generate_embeddings.slurm: NGC base image, reused named container,
-# pip install gated by a `pip list | grep -q` idiom so reruns skip the install.
+# NGC base image + reused named container. Deps come from pyproject.toml via
+# `pip install -e /workspace`, which runs every job and upgrades anything that
+# violates a pin (e.g. datasets>=3.0). torch/numpy keep the NGC-optimized builds
+# since they're unpinned in pyproject and already present in the image.
 # IMPORTANT: Update REPO_PATH below to match your cluster home directory path.
 # NOTE: Excludes V100 GPUs (CUDA 7.0) since PyTorch 25.03 requires CUDA capability >= 7.5.
 
@@ -36,9 +38,6 @@ srun --container-image="nvcr.io#nvidia/pytorch:25.03-py3" \
      --container-writable \
      --container-mounts=$REPO_PATH:/workspace \
      bash -c 'set -euo pipefail; \
-       pip list 2>/dev/null | grep -q "^sentence-transformers" || \
-         pip install --no-cache-dir transformers datasets sentence-transformers model2vec \
-           accelerate huggingface_hub pyyaml scipy tqdm wandb python-dotenv; \
        pip install --no-cache-dir -e /workspace'
 
 # Step 2: Run model search

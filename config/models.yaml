@@ -50,3 +50,82 @@
   embedding_dim: 768
   max_length: 512
 
+- name: roberta-base
+  hf_repo: FacebookAI/roberta-base
+  loader: transformers_encoder
+  pooling: mean
+  embedding_dim: 768
+  max_length: 512
+
+- name: deberta-v3-base
+  hf_repo: microsoft/deberta-v3-base
+  loader: transformers_encoder
+  pooling: mean
+  embedding_dim: 768
+  max_length: 512
+
+- name: electra-base-discriminator
+  hf_repo: google/electra-base-discriminator
+  loader: transformers_encoder
+  pooling: mean
+  embedding_dim: 768
+  max_length: 512
+
+- name: albert-base-v2
+  hf_repo: albert/albert-base-v2
+  loader: transformers_encoder
+  pooling: mean
+  embedding_dim: 768
+  max_length: 512
+
+- name: e5-base-v2
+  hf_repo: intfloat/e5-base-v2
+  loader: transformers_encoder
+  pooling: mean
+  embedding_dim: 768
+  max_length: 512
+  input_prefix: "query: "
+
+- name: bge-base-en-v1.5
+  hf_repo: BAAI/bge-base-en-v1.5
+  loader: transformers_encoder
+  pooling: cls
+  embedding_dim: 768
+  max_length: 512
+
+- name: modernbert-embed-base
+  hf_repo: nomic-ai/modernbert-embed-base
+  loader: transformers_encoder
+  pooling: mean
+  embedding_dim: 768
+  max_length: 512
+
+- name: sentence-t5-base
+  hf_repo: sentence-transformers/sentence-t5-base
+  loader: sentence_transformers
+  pooling: builtin
+  embedding_dim: 768
+  max_length: 256
+
+- name: mxbai-embed-large-v1
+  hf_repo: mixedbread-ai/mxbai-embed-large-v1
+  loader: sentence_transformers
+  pooling: builtin
+  embedding_dim: 1024
+  max_length: 512
+
+- name: gte-base-en-v1.5
+  hf_repo: Alibaba-NLP/gte-base-en-v1.5
+  loader: sentence_transformers
+  pooling: builtin
+  embedding_dim: 768
+  max_length: 512
+
+- name: nomic-embed-text-v1.5
+  hf_repo: nomic-ai/nomic-embed-text-v1.5
+  loader: sentence_transformers
+  pooling: builtin
+  embedding_dim: 768
+  max_length: 512
+  input_prefix: "search_document: "
+

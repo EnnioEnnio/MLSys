@@ -121,5 +121,8 @@ def score_candidate(
         head_train_curve=result.train_curve,
         head_val_curve=result.val_curve,
         epochs_run=result.epochs_run,
-        extras={"embedding_dim": spec.embedding_dim},
+        extras={
+            "embedding_dim": spec.embedding_dim,
+            "head_type": "linear" if head_config.hidden is None else "mlp",
+        },
     )

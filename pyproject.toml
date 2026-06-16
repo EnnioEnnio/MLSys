@@ -10,7 +10,10 @@ dependencies = [
     "torch",
     "transformers",
     "accelerate",
-    "datasets",
+    # >=3.0: loads hub datasets directly (no per-dataset loading script). Older
+    # versions (e.g. the 1.1.1 preinstalled in some NGC containers) chase a
+    # missing <repo>.py script and fail. Pin forces `pip install -e .` to upgrade.
+    "datasets>=3.0",
     "sentence-transformers",
     "model2vec",
     "huggingface_hub",

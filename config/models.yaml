@@ -120,6 +120,8 @@
   pooling: builtin
   embedding_dim: 768
   max_length: 512
+  # Ships a custom architecture (Alibaba-NLP/new-impl) executed at load time.
+  trust_remote_code: true
 
 - name: nomic-embed-text-v1.5
   hf_repo: nomic-ai/nomic-embed-text-v1.5
@@ -128,4 +130,6 @@
   embedding_dim: 768
   max_length: 512
   input_prefix: "search_document: "
+  # Ships a custom architecture (nomic_bert) executed at load time.
+  trust_remote_code: true
 

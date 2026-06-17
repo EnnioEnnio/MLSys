@@ -28,6 +28,7 @@ class ModelSpec:
     pooling: str = "builtin"
     max_length: int | None = None
     input_prefix: str = ""
+    trust_remote_code: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -56,7 +57,7 @@ def load_specs(path: Path | None = None) -> dict[str, ModelSpec]:
             raise ValueError(
                 f"models.yaml entry {entry['name']!r}: embedding_dim must be > 0, got {dim}"
             )
-        known = {*REQUIRED_FIELDS, "pooling", "max_length", "input_prefix"}
+        known = {*REQUIRED_FIELDS, "pooling", "max_length", "input_prefix", "trust_remote_code"}
         spec = ModelSpec(
             name=entry["name"],
             hf_repo=entry["hf_repo"],
@@ -65,6 +66,7 @@ def load_specs(path: Path | None = None) -> dict[str, ModelSpec]:
             pooling=entry.get("pooling", "builtin"),
             max_length=entry.get("max_length"),
             input_prefix=entry.get("input_prefix", "") or "",
+            trust_remote_code=bool(entry.get("trust_remote_code", False)),
             extra={k: v for k, v in entry.items() if k not in known},
         )
         if spec.name in specs:

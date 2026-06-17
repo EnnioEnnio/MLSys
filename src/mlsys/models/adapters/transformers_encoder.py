@@ -16,7 +16,14 @@ def _pool(hidden: torch.Tensor, attention_mask: torch.Tensor, how: str) -> torch
     import torch
 
     if how == "cls":
-        return hidden[:, 0, :]
+        # `.clone()` is load-bearing: `hidden[:, 0, :]` is a basic-slice VIEW that
+        # shares storage with the full (batch, seq, hidden) activation tensor. The
+        # caller keeps pooled outputs on-device and `.to(device, float32)` is a
+        # no-op (returns the same view) when already on that device+dtype, so the
+        # view would pin every batch's entire activation tensor in memory and OOM
+        # on cls-pooled models. mean/last already build fresh tensors; only cls
+        # aliases, so only cls needs the copy.
+        return hidden[:, 0, :].clone()
     if how == "last":
         # Index of the last non-pad token per row.
         lengths = attention_mask.sum(dim=1) - 1

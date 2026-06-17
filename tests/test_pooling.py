@@ -54,3 +54,15 @@ def test_pool_last_full_length_row() -> None:
     mask = torch.tensor([[1, 1, 1]])
     out = _pool(hidden, mask, "last")
     assert torch.equal(out, torch.tensor([[3.0]]))
+
+
+@pytest.mark.parametrize("how", ["cls", "mean", "last"])
+def test_pool_output_does_not_alias_hidden_state(how: str) -> None:
+    # Regression: a pooled output that *views* into `hidden` keeps the whole
+    # (B, T, H) activation tensor alive. The caller stores pooled outputs for the
+    # full split on-device, so an aliasing view pins every batch's activations and
+    # OOMs the GPU (hit cls, which used a basic-slice view). Each pooling must
+    # return a tensor that owns its storage so `hidden` can be freed.
+    hidden, mask = _hidden_and_mask()
+    out = _pool(hidden, mask, how)
+    assert out.untyped_storage().data_ptr() != hidden.untyped_storage().data_ptr()

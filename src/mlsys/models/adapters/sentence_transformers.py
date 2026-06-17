@@ -21,7 +21,13 @@ class SentenceTransformersBackbone:
         self.embedding_dim = spec.embedding_dim
         self._device = device
         self._input_prefix = spec.input_prefix
-        kwargs = {"device": device}
+        kwargs: dict[str, object] = {"device": device}
+        # Opt-in per model (config/models.yaml). Some embedding checkpoints ship a
+        # custom architecture as Python in their HF repo (e.g. gte's Alibaba-NLP/new-impl,
+        # nomic's nomic_bert); transformers refuses to import that code unless we
+        # explicitly consent. Left False, the vast majority of the pool never grants it.
+        if spec.trust_remote_code:
+            kwargs["trust_remote_code"] = True
         self._model = SentenceTransformer(spec.hf_repo, **kwargs)
         # Force fp32. transformers>=5 loads checkpoints in their saved dtype, so
         # fp16 checkpoints (e.g. sentence-t5-base) arrive in half precision. On

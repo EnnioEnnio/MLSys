@@ -56,11 +56,17 @@ class TransformersEncoderBackbone:
         self._pooling = spec.pooling
         self._max_length = spec.max_length
         self._input_prefix = spec.input_prefix
-        tokenizer = AutoTokenizer.from_pretrained(spec.hf_repo)
+        # Opt-in per model (config/models.yaml): consent to run a checkpoint's
+        # custom architecture code from its HF repo. Off for every model that
+        # transformers supports natively, which is all of this loader's pool today.
+        trc = spec.trust_remote_code
+        tokenizer = AutoTokenizer.from_pretrained(spec.hf_repo, trust_remote_code=trc)
         if tokenizer is None:
             raise RuntimeError(f"AutoTokenizer returned None for {spec.hf_repo!r}")
         self._tokenizer = tokenizer
-        self._model = AutoModel.from_pretrained(spec.hf_repo, use_safetensors=True).to(device)
+        self._model = AutoModel.from_pretrained(
+            spec.hf_repo, use_safetensors=True, trust_remote_code=trc
+        ).to(device)
         self._model.eval()
         self._torch = torch
 

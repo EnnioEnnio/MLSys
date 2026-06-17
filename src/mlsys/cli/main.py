@@ -44,6 +44,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     search.add_argument("--epochs", type=int, default=HeadTrainConfig.epochs)
     search.add_argument("--batch-size", type=int, default=64)
+    search.add_argument(
+        "--hidden",
+        type=int,
+        default=HeadTrainConfig.hidden,
+        metavar="WIDTH",
+        help=(
+            "hidden-layer width of the head. Omit or 0 -> linear probe "
+            "(in_dim -> 1). A positive value builds a 2-layer MLP "
+            "(in_dim -> WIDTH -> ReLU -> 1); WIDTH is the size of that "
+            "intermediate layer (more units = more capacity)."
+        ),
+    )
     search.add_argument("--device", default=None, help="cpu|cuda; default auto-detect")
     search.add_argument("--wandb", action="store_true", help="opt-in W&B logging")
     search.add_argument(
@@ -106,7 +118,7 @@ def _run_search(args: argparse.Namespace) -> int:
 
     dataset = load_dataset(args.dataset)
     model_names = [m.strip() for m in args.models.split(",")] if args.models else None
-    head_cfg = HeadTrainConfig(epochs=args.epochs, batch_size=args.batch_size)
+    head_cfg = HeadTrainConfig(epochs=args.epochs, batch_size=args.batch_size, hidden=args.hidden)
 
     wandb_run = None
     if args.wandb:

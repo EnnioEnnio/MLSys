@@ -38,9 +38,18 @@ tests/                # CPU-only smoke + unit tests
 
 ## CLI
 
-- `python -m mlsys search` — run a search. Flags: `--dataset NAME`, `--models name1,name2` (optional, default all), `--strategy full_eval`, `--output-dir PATH` (default `runs/<unix-ts>`), `--epochs INT`, `--batch-size INT`, `--device cpu|cuda`, `--wandb`, `--cache-embeddings` (stubbed for v2).
+- `python -m mlsys search` — run a search. Flags: `--dataset NAME`, `--models name1,name2` (optional, default all), `--strategy full_eval`, `--output-dir PATH` (default `runs/<unix-ts>`), `--epochs INT`, `--batch-size INT`, `--hidden WIDTH`, `--device cpu|cuda`, `--wandb`, `--cache-embeddings` (stubbed for v2).
 - `python -m mlsys list-models` — dumps `config/models.yaml` entries.
 - `python -m mlsys list-datasets` — dumps `config/datasets.yaml` entries.
+
+### Head type (`--hidden`)
+
+The head attached to each frozen backbone is a linear probe by default (`in_dim -> 1`). Pass `--hidden WIDTH` to use a 2-layer MLP instead: `in_dim -> WIDTH -> ReLU -> 1`. `WIDTH` is the size of the hidden layer — the only thing the number controls — so larger values give the head more capacity (and more parameters) to fit nonlinear structure. `--hidden 0` (or omitting the flag) keeps the linear head.
+
+```bash
+python -m mlsys search --dataset wine_reviews --hidden 256   # MLP head, 256-wide hidden layer
+python -m mlsys search --dataset wine_reviews                # linear head (default)
+```
 
 ### W&B logging (`--wandb`)
 

@@ -23,6 +23,13 @@ class SentenceTransformersBackbone:
         self._input_prefix = spec.input_prefix
         kwargs = {"device": device}
         self._model = SentenceTransformer(spec.hf_repo, **kwargs)
+        # Force fp32. transformers>=5 loads checkpoints in their saved dtype, so
+        # fp16 checkpoints (e.g. sentence-t5-base) arrive in half precision. On
+        # NGC images that monkeypatch apex's FusedRMSNorm into T5, that fused
+        # kernel rejects half input ("expected scalar type Float but found Half").
+        # Pinning every backbone to fp32 keeps inference in one kernel-safe
+        # precision and embeddings full-precision (older transformers did this here).
+        self._model = self._model.float()
         if spec.max_length is not None:
             self._model.max_seq_length = spec.max_length
 

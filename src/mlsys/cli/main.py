@@ -59,6 +59,14 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     search.add_argument("--device", default=None, help="cpu|cuda; default auto-detect")
+    search.add_argument(
+        "--head-repeats",
+        type=int,
+        default=3,
+        metavar="N",
+        help="train the linear head N times and average predictions to reduce ranking variance"
+        " (default: 3)",
+    )
     search.add_argument("--wandb", action="store_true", help="opt-in W&B logging")
     search.add_argument(
         "--cache-embeddings",
@@ -155,6 +163,7 @@ def _run_search(args: argparse.Namespace) -> int:
         device=device,
         batch_size=args.batch_size,
         head_config=head_cfg,
+        head_repeats=args.head_repeats,
         wandb_run=wandb_run,
     )
     print(f"[mlsys] wrote {len(records)} rows to {output_dir / 'results.jsonl'}")

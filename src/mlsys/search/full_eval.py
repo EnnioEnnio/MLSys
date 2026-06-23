@@ -35,6 +35,7 @@ def full_eval(
     device: str = "cpu",
     batch_size: int = 64,
     head_config: HeadTrainConfig | None = None,
+    head_repeats: int = 3,
     wandb_run: object | None = None,
 ) -> list[RunRecord]:
     """Score every (resolved) candidate; append each row to results.jsonl."""
@@ -49,6 +50,7 @@ def full_eval(
                 device=device,
                 batch_size=batch_size,
                 head_config=head_config,
+                head_repeats=head_repeats,
             )
             writer.write(record.to_dict())
             records.append(record)

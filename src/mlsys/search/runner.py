@@ -110,15 +110,22 @@ def score_candidate(
     batch_size: int = 64,
     head_config: HeadTrainConfig | None = None,
     head_repeats: int = 3,
+    reuse_seeds: bool = True,
+
 ) -> RunRecord:
     """Train an FC head on `dataset` using embeddings from `spec`'s backbone, score on test.
 
-    The head is trained `head_repeats` times from different random initialisations and the
+    The head is trained `head_repeats` times from different random initialisations or from the same seeds and the
     test predictions are averaged, reducing variance.
     """
     head_config = head_config or HeadTrainConfig()
     reset_peak_gpu_memory()
     timer = Timer()
+    seeds = [None] * head_repeats
+    if reuse_seeds:
+        seeds = [torch.randint(0, 2**32 - 1, (1,)).item() for _ in range(head_repeats)]
+
+
 
     with timer.section("prepare_model_s"):
         backbone = build_backbone(spec, device=device)
@@ -135,7 +142,7 @@ def score_candidate(
 
     with timer.section("train_head_s"):
         head_results = [
-            train_head(x_train, y_train, x_val, y_val, head_config) for _ in range(head_repeats)
+            train_head(x_train, y_train, x_val, y_val, head_config, seeds[i]) for i in range(head_repeats)
         ]
 
     with timer.section("eval_s"):

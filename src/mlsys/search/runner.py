@@ -114,7 +114,7 @@ def score_candidate(
     """Train an FC head on `dataset` using embeddings from `spec`'s backbone, score on test.
 
     The head is trained `head_repeats` times from different random initialisations and the
-    test predictions are averaged, reducing variance from the small (~50-sample) train split.
+    test predictions are averaged, reducing variance.
     """
     head_config = head_config or HeadTrainConfig()
     reset_peak_gpu_memory()

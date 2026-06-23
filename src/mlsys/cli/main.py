@@ -62,7 +62,8 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=3,
         metavar="N",
-        help="train the linear head N times and average predictions to reduce ranking variance (default: 3)",
+        help="train the linear head N times and average predictions to reduce ranking variance"
+        " (default: 3)",
     )
     search.add_argument("--wandb", action="store_true", help="opt-in W&B logging")
     search.add_argument(

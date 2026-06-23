@@ -30,9 +30,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     search = sub.add_parser("search", help="Run a model search over a dataset.")
-    search.add_argument(
-        "--dataset", required=True, help="dataset name from config/datasets.yaml"
-    )
+    search.add_argument("--dataset", required=True, help="dataset name from config/datasets.yaml")
     search.add_argument(
         "--models",
         default=None,
@@ -116,9 +114,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_search(args: argparse.Namespace) -> int:
-    output_dir = (
-        Path(args.output_dir) if args.output_dir else Path(f"runs/{int(time.time())}")
-    )
+    output_dir = Path(args.output_dir) if args.output_dir else Path(f"runs/{int(time.time())}")
     device = args.device or _default_device()
 
     if args.cache_embeddings:
@@ -130,9 +126,7 @@ def _run_search(args: argparse.Namespace) -> int:
 
     dataset = load_dataset(args.dataset)
     model_names = [m.strip() for m in args.models.split(",")] if args.models else None
-    head_cfg = HeadTrainConfig(
-        epochs=args.epochs, batch_size=args.batch_size, hidden=args.hidden
-    )
+    head_cfg = HeadTrainConfig(epochs=args.epochs, batch_size=args.batch_size, hidden=args.hidden)
 
     wandb_run = None
     if args.wandb:

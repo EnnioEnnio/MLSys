@@ -53,7 +53,7 @@ def test_seed_applies_deterministic_initialization() -> None:
     cfg = HeadTrainConfig(epochs=1, batch_size=32, lr=1e-3)
 
     # Train two models with the same seed
-    result1 = train_head(x_pre-commit install --allow-missing-configtrain, y_train, x_val, y_val, cfg, seed)
+    result1 = train_head(x_train, y_train, x_val, y_val, cfg, seed)
 
     result2 = train_head(x_train, y_train, x_val, y_val, cfg, seed)
 

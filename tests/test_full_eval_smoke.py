@@ -16,11 +16,11 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from mlsys.datasets import LoadedDataset, Row  # noqa: E402
-from mlsys.datasets.registry import DatasetSpec  # noqa: E402
-from mlsys.head import HeadTrainConfig  # noqa: E402
-from mlsys.models.registry import _ADAPTERS, ModelSpec, register_adapter  # noqa: E402
-from mlsys.search.full_eval import full_eval  # noqa: E402
+from src.mlsys.datasets import LoadedDataset, Row  # noqa: E402
+from src.mlsys.datasets.registry import DatasetSpec  # noqa: E402
+from src.mlsys.head import HeadTrainConfig  # noqa: E402
+from src.mlsys.models.registry import _ADAPTERS, ModelSpec, register_adapter  # noqa: E402
+from src.mlsys.search.full_eval import full_eval  # noqa: E402
 
 
 class _FakeBackbone:

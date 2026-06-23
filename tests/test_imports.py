@@ -11,7 +11,7 @@ from __future__ import annotations
 import importlib
 import pkgutil
 
-import mlsys
+from src import mlsys
 
 
 def test_all_submodules_import() -> None:

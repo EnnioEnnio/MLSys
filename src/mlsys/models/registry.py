@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 if TYPE_CHECKING:
-    from mlsys.models.backbone import Backbone
+    from src.mlsys.models.backbone import Backbone
 
 REQUIRED_FIELDS = ("name", "hf_repo", "loader", "embedding_dim")
 # The built-in loaders, kept for reference/error messages. Loader validation in

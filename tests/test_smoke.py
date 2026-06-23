@@ -1,4 +1,4 @@
-import mlsys
+from src import mlsys
 
 
 def test_import() -> None:

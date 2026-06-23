@@ -1,6 +1,6 @@
 """Enables `python -m mlsys <subcommand>`."""
 
-from mlsys.cli.main import main
+from src.mlsys.cli.main import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

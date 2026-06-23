@@ -7,11 +7,11 @@ import sys
 import time
 from pathlib import Path
 
-from mlsys.datasets import load_dataset
-from mlsys.datasets.registry import load_specs as load_dataset_specs
-from mlsys.head import HeadTrainConfig
-from mlsys.models.registry import load_specs as load_model_specs
-from mlsys.search.full_eval import full_eval
+from src.mlsys.datasets import load_dataset
+from src.mlsys.datasets.registry import load_specs as load_dataset_specs
+from src.mlsys.head import HeadTrainConfig
+from src.mlsys.models.registry import load_specs as load_model_specs
+from src.mlsys.search.full_eval import full_eval
 
 
 def _default_device() -> str:

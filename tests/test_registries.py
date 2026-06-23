@@ -6,14 +6,14 @@ from typing import Never
 
 import pytest
 
-from mlsys.datasets.registry import load_specs as load_dataset_specs
-from mlsys.models.registry import (
+from src.mlsys.datasets.registry import load_specs as load_dataset_specs
+from src.mlsys.models.registry import (
     _ADAPTERS,
     KNOWN_LOADERS,
     _ensure_adapters_registered,
     register_adapter,
 )
-from mlsys.models.registry import load_specs as load_model_specs
+from src.mlsys.models.registry import load_specs as load_model_specs
 
 
 def test_datasets_yaml_parses() -> None:

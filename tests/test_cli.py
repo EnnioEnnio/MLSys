@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from mlsys.cli import main
+from src.mlsys.cli import main
 
 
 def test_list_models_prints_seed_pool(capsys) -> None:

@@ -6,7 +6,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from mlsys.head import HeadTrainConfig, train_head  # noqa: E402
+from src.mlsys.head import HeadTrainConfig, train_head  # noqa: E402
 
 
 def test_head_converges_below_noise_floor() -> None:

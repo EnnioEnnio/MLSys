@@ -6,13 +6,13 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mlsys.head import HeadTrainConfig
-from mlsys.io import JsonlWriter, results_path
-from mlsys.models.registry import ModelSpec, load_specs
-from mlsys.search.runner import RunRecord, release_gpu_memory, score_candidate
+from src.mlsys.head import HeadTrainConfig
+from src.mlsys.io import JsonlWriter, results_path
+from src.mlsys.models.registry import ModelSpec, load_specs
+from src.mlsys.search.runner import RunRecord, release_gpu_memory, score_candidate
 
 if TYPE_CHECKING:
-    from mlsys.datasets import LoadedDataset
+    from src.mlsys.datasets import LoadedDataset
 
 
 def _resolve_models(model_names: Iterable[str] | None) -> list[ModelSpec]:

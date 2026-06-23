@@ -7,7 +7,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from mlsys.datasets.registry import DatasetSpec, get_spec, load_specs
+from src.mlsys.datasets.registry import DatasetSpec, get_spec, load_specs
 
 log = logging.getLogger(__name__)
 

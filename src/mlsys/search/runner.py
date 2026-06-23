@@ -135,8 +135,7 @@ def score_candidate(
 
     with timer.section("train_head_s"):
         head_results = [
-            train_head(x_train, y_train, x_val, y_val, head_config)
-            for _ in range(head_repeats)
+            train_head(x_train, y_train, x_val, y_val, head_config) for _ in range(head_repeats)
         ]
 
     with timer.section("eval_s"):

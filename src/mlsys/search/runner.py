@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import torch
 
 from mlsys.datasets.registry import REQUIRED_SPLITS
@@ -92,6 +93,15 @@ def release_gpu_memory(device: str) -> None:
         torch.cuda.empty_cache()
 
 
+def _average_curves(curves: list[list[float]]) -> list[float]:
+    """Average training curves of different lengths by padding each with its last value."""
+    if not curves:
+        return []
+    max_len = max(len(c) for c in curves)
+    padded = np.array([c + [c[-1]] * (max_len - len(c)) for c in curves])
+    return padded.mean(axis=0).tolist()
+
+
 def score_candidate(
     dataset: LoadedDataset,
     spec: ModelSpec,
@@ -99,8 +109,13 @@ def score_candidate(
     device: str = "cpu",
     batch_size: int = 64,
     head_config: HeadTrainConfig | None = None,
+    head_repeats: int = 3,
 ) -> RunRecord:
-    """Train an FC head on `dataset` using embeddings from `spec`'s backbone, score on test."""
+    """Train an FC head on `dataset` using embeddings from `spec`'s backbone, score on test.
+
+    The head is trained `head_repeats` times from different random initialisations and the
+    test predictions are averaged, reducing variance from the small (~50-sample) train split.
+    """
     head_config = head_config or HeadTrainConfig()
     reset_peak_gpu_memory()
     timer = Timer()
@@ -119,12 +134,18 @@ def score_candidate(
         x_test, y_test = _embed_split(backbone, rows["test"], batch_size, device)
 
     with timer.section("train_head_s"):
-        result = train_head(x_train, y_train, x_val, y_val, head_config)
+        head_results = [
+            train_head(x_train, y_train, x_val, y_val, head_config)
+            for _ in range(head_repeats)
+        ]
 
     with timer.section("eval_s"):
         with torch.inference_mode():
-            preds = result.head(x_test).detach().cpu().numpy()
-        metrics = regression_metrics(y_test.detach().cpu().numpy(), preds)
+            all_preds = np.mean(
+                [r.head(x_test).detach().cpu().numpy() for r in head_results],
+                axis=0,
+            )
+        metrics = regression_metrics(y_test.detach().cpu().numpy(), all_preds)
 
     timer.record_peak_gpu_mb()
 
@@ -133,12 +154,13 @@ def score_candidate(
         model=spec.name,
         metrics=metrics,
         timing=timer.breakdown.to_dict(),
-        head_train_curve=result.train_curve,
-        head_val_curve=result.val_curve,
-        epochs_run=result.epochs_run,
+        head_train_curve=_average_curves([r.train_curve for r in head_results]),
+        head_val_curve=_average_curves([r.val_curve for r in head_results]),
+        epochs_run=round(sum(r.epochs_run for r in head_results) / len(head_results)),
         extras={
             "embedding_dim": spec.embedding_dim,
             # Mirror FCHead's own linear/mlp decision (hidden None *or* <= 0 -> linear).
             "head_type": "mlp" if head_config.hidden and head_config.hidden > 0 else "linear",
+            "head_repeats": head_repeats,
         },
     )

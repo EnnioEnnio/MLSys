@@ -143,6 +143,7 @@ def _run_search(args: argparse.Namespace) -> int:
                 "epochs": args.epochs,
                 "batch_size": args.batch_size,
                 "device": device,
+                "hidden": head_cfg.hidden,
             },
         )
 

@@ -32,6 +32,39 @@ def test_unknown_strategy_exits_nonzero() -> None:
     assert exc.value.code != 0
 
 
+@pytest.mark.parametrize("strategy", ["frozen", "finetune", "full_eval"])
+def test_strategy_routes_to_run_strategy(strategy, tmp_path, monkeypatch) -> None:
+    # --strategy must accept all three choices and forward the name to run_strategy,
+    # without touching the network/heavy deps (load_dataset + run_strategy stubbed).
+    # The `main` function and the `mlsys.cli.main` submodule share a name on the
+    # package, so reach the module object through sys.modules to patch its globals.
+    import sys
+
+    cli_main = sys.modules["mlsys.cli.main"]
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(cli_main, "load_dataset", lambda name: object())
+
+    def fake_run_strategy(name, dataset, **kwargs):
+        captured["strategy"] = name
+        return []
+
+    monkeypatch.setattr(cli_main, "run_strategy", fake_run_strategy)
+
+    rc = main(
+        [
+            "search",
+            "--dataset",
+            "wine_reviews",
+            "--strategy",
+            strategy,
+            "--output-dir",
+            str(tmp_path / "run"),
+        ]
+    )
+    assert rc == 0
+    assert captured["strategy"] == strategy
+
+
 def test_unknown_dataset_raises() -> None:
     with pytest.raises((KeyError, SystemExit)):
         main(["search", "--dataset", "definitely-not-a-dataset"])

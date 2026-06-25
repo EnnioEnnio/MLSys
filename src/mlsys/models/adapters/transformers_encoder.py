@@ -40,6 +40,7 @@ def _pool(hidden: torch.Tensor, attention_mask: torch.Tensor, how: str) -> torch
 class TransformersEncoderBackbone:
     name: str
     embedding_dim: int
+    can_finetune: bool = True
 
     def __init__(self, spec: ModelSpec, device: str) -> None:
         import torch
@@ -70,7 +71,7 @@ class TransformersEncoderBackbone:
         self._model.eval()
         self._torch = torch
 
-    def encode(self, texts: list[str]) -> torch.Tensor:
+    def _tokenize(self, texts: list[str]) -> dict[str, torch.Tensor]:
         if self._input_prefix:
             texts = [self._input_prefix + t for t in texts]
         tok_kwargs: dict[str, object] = {
@@ -81,11 +82,29 @@ class TransformersEncoderBackbone:
         if self._max_length is not None:
             tok_kwargs["max_length"] = self._max_length
         batch = self._tokenizer(texts, **tok_kwargs)
-        batch = {k: v.to(self._device) for k, v in batch.items()}
+        return {k: v.to(self._device) for k, v in batch.items()}
+
+    def encode(self, texts: list[str]) -> torch.Tensor:
+        batch = self._tokenize(texts)
         with self._torch.inference_mode():
             out = self._model(**batch)
-        hidden = out.last_hidden_state
-        return _pool(hidden, batch["attention_mask"], self._pooling)
+        return _pool(out.last_hidden_state, batch["attention_mask"], self._pooling)
+
+    def encode_trainable(self, texts: list[str]) -> torch.Tensor:
+        # Same forward + pooling as encode(), but WITHOUT inference_mode so gradients
+        # flow back into the backbone. Caller is responsible for train()/eval() mode.
+        batch = self._tokenize(texts)
+        out = self._model(**batch)
+        return _pool(out.last_hidden_state, batch["attention_mask"], self._pooling)
+
+    def parameters(self) -> object:
+        return self._model.parameters()
+
+    def train(self) -> None:
+        self._model.train()
+
+    def eval(self) -> None:
+        self._model.eval()
 
 
 def _build(spec: ModelSpec, device: str) -> TransformersEncoderBackbone:

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 class SentenceTransformersBackbone:
     name: str
     embedding_dim: int
+    can_finetune: bool = True
 
     def __init__(self, spec: ModelSpec, device: str) -> None:
         from sentence_transformers import SentenceTransformer
@@ -48,6 +49,26 @@ class SentenceTransformersBackbone:
             show_progress_bar=False,
             device=self._device,
         )
+
+    def encode_trainable(self, texts: list[str]) -> torch.Tensor:
+        # `.encode()` runs the forward pass under no_grad internally, so it can't be
+        # used for fine-tuning. Drive the underlying module API instead: tokenize →
+        # move features to device → forward, which keeps the graph attached so grads
+        # reach the backbone. Returns the pooled 'sentence_embedding' [B, embedding_dim].
+        if self._input_prefix:
+            texts = [self._input_prefix + t for t in texts]
+        features = self._model.tokenize(texts)
+        features = {k: (v.to(self._device) if hasattr(v, "to") else v) for k, v in features.items()}
+        return self._model(features)["sentence_embedding"]
+
+    def parameters(self) -> object:
+        return self._model.parameters()
+
+    def train(self) -> None:
+        self._model.train()
+
+    def eval(self) -> None:
+        self._model.eval()
 
 
 def _build(spec: ModelSpec, device: str) -> SentenceTransformersBackbone:

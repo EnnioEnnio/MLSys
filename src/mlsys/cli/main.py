@@ -9,9 +9,10 @@ from pathlib import Path
 
 from mlsys.datasets import load_dataset
 from mlsys.datasets.registry import load_specs as load_dataset_specs
+from mlsys.finetune import FinetuneConfig
 from mlsys.head import HeadTrainConfig
 from mlsys.models.registry import load_specs as load_model_specs
-from mlsys.search.full_eval import full_eval
+from mlsys.search.full_eval import STRATEGIES, run_strategy
 
 
 def _default_device() -> str:
@@ -36,7 +37,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="comma-separated model names; default = all from config/models.yaml",
     )
-    search.add_argument("--strategy", default="full_eval", choices=("full_eval",))
+    search.add_argument(
+        "--strategy",
+        default="frozen",
+        choices=STRATEGIES,
+        help=(
+            "frozen: train an FC head on the frozen backbone (cheap proxy ranking). "
+            "finetune: unfreeze + train backbone+head jointly (ground truth). "
+            "full_eval: run both over the pool and compute the regret-vs-budget curve."
+        ),
+    )
     search.add_argument(
         "--output-dir",
         default=None,
@@ -64,6 +74,24 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="train the linear head N times and average predictions to reduce ranking variance"
         " (default: 3)",
+    )
+    search.add_argument(
+        "--finetune-epochs",
+        type=int,
+        default=FinetuneConfig.epochs,
+        help="epochs for the finetune/full_eval joint loop (default: %(default)s)",
+    )
+    search.add_argument(
+        "--finetune-lr",
+        type=float,
+        default=FinetuneConfig.backbone_lr,
+        help="backbone learning rate for finetune/full_eval (default: %(default)s)",
+    )
+    search.add_argument(
+        "--finetune-batch-size",
+        type=int,
+        default=FinetuneConfig.batch_size,
+        help="batch size for the finetune/full_eval joint loop (default: %(default)s)",
     )
     search.add_argument("--wandb", action="store_true", help="opt-in W&B logging")
     search.add_argument(
@@ -127,6 +155,11 @@ def _run_search(args: argparse.Namespace) -> int:
     dataset = load_dataset(args.dataset)
     model_names = [m.strip() for m in args.models.split(",")] if args.models else None
     head_cfg = HeadTrainConfig(epochs=args.epochs, batch_size=args.batch_size, hidden=args.hidden)
+    finetune_cfg = FinetuneConfig(
+        epochs=args.finetune_epochs,
+        batch_size=args.finetune_batch_size,
+        backbone_lr=args.finetune_lr,
+    )
 
     wandb_run = None
     if args.wandb:
@@ -144,23 +177,27 @@ def _run_search(args: argparse.Namespace) -> int:
                 "batch_size": args.batch_size,
                 "device": device,
                 "hidden": head_cfg.hidden,
+                "finetune_epochs": finetune_cfg.epochs,
+                "finetune_batch_size": finetune_cfg.batch_size,
+                "finetune_backbone_lr": finetune_cfg.backbone_lr,
             },
         )
 
-    if args.strategy != "full_eval":
-        raise SystemExit(f"unknown strategy {args.strategy!r}")
-
-    records = full_eval(
+    records = run_strategy(
+        args.strategy,
         dataset,
         output_dir=output_dir,
         model_names=model_names,
         device=device,
         batch_size=args.batch_size,
         head_config=head_cfg,
+        finetune_config=finetune_cfg,
         head_repeats=args.head_repeats,
         wandb_run=wandb_run,
     )
     print(f"[mlsys] wrote {len(records)} rows to {output_dir / 'results.jsonl'}")
+    if args.strategy == "full_eval":
+        print(f"[mlsys] wrote regret curve to {output_dir / 'regret.json'}")
     if wandb_run is not None:
         wandb_run.finish()
     return 0

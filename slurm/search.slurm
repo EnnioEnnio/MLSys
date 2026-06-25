@@ -62,6 +62,9 @@ echo "Running model search..."
 # by the next differently-sized one. Without it the ~N-model loop fragments the
 # GPU and OOMs on a small contiguous allocation. Forwarded into the container.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# --strategy full_eval runs both passes over the pool (frozen proxy + full finetune)
+# and writes the regret-vs-budget curve to regret.json. The --finetune-* flags tune the
+# joint backbone+head loop (memory-heavy; keep the batch small on a single GPU).
 srun --container-name=$CONTAINER_NAME \
      --container-mounts=$REPO_PATH:/workspace \
      --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF \
@@ -70,8 +73,12 @@ srun --container-name=$CONTAINER_NAME \
        --dataset wine_reviews \
        --strategy full_eval \
        --output-dir /workspace/runs/$SLURM_JOB_ID \
+       --finetune-epochs 8 \
+       --finetune-lr 2e-5 \
+       --finetune-batch-size 16 \
        --wandb
 
 echo "Job completed!"
 echo "Output files:"
 echo "  - runs/$SLURM_JOB_ID/results.jsonl"
+echo "  - runs/$SLURM_JOB_ID/regret.json"

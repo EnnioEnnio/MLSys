@@ -21,9 +21,13 @@ class RegressionMetrics:
 def _spearman(x: np.ndarray, y: np.ndarray) -> float:
     # Use scipy when available (sharper tie handling); fall back to manual rho.
     try:
-        from scipy.stats import spearmanr
+        import warnings
 
-        rho = spearmanr(x, y).correlation
+        from scipy.stats import ConstantInputWarning, spearmanr
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ConstantInputWarning)
+            rho = spearmanr(x, y).correlation
         return float(rho) if rho == rho else 0.0  # NaN guard
     except ImportError:
         rx = np.argsort(np.argsort(x))

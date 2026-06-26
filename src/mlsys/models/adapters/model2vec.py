@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from src.mlsys.models.registry import ModelSpec, register_adapter
+from mlsys.models.registry import ModelSpec, register_adapter
 
 if TYPE_CHECKING:
     import torch

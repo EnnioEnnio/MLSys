@@ -7,7 +7,7 @@ import sys
 import numpy as np
 import pytest
 
-from src.mlsys.search.metrics import regression_metrics
+from mlsys.search.metrics import regression_metrics
 
 
 def test_mse_mae_hand_computed() -> None:

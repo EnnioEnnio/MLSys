@@ -6,7 +6,7 @@ these run with no GPU (and even with no torch) present.
 
 from __future__ import annotations
 
-from src.mlsys.search.timing import Timer, TimingBreakdown
+from mlsys.search.timing import Timer, TimingBreakdown
 
 
 def _busy() -> int:

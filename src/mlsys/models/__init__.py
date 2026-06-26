@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from src.mlsys.models.backbone import Backbone
-from src.mlsys.models.registry import (
+from mlsys.models.backbone import Backbone
+from mlsys.models.registry import (
     ModelSpec,
     build_backbone,
     get_spec,

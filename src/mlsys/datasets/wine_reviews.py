@@ -8,7 +8,7 @@ with missing prices) so peers know where to put it.
 
 from __future__ import annotations
 
-from src.mlsys.datasets import LoadedDataset, load_dataset
+from mlsys.datasets import LoadedDataset, load_dataset
 
 DATASET_NAME = "wine_reviews"
 

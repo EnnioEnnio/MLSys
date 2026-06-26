@@ -19,7 +19,7 @@ pytest.importorskip("model2vec")
 
 
 def test_potion_backbone_encodes() -> None:
-    from src.mlsys.models import load_backbone
+    from mlsys.models import load_backbone
 
     backbone = load_backbone("potion-base-8M", device="cpu")
     emb = backbone.encode(["a red wine with notes of cherry", "crisp white, citrus"])

@@ -9,15 +9,15 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import torch
 
-from src.mlsys.datasets.registry import REQUIRED_SPLITS
-from src.mlsys.head import HeadTrainConfig, train_head
-from src.mlsys.models.registry import ModelSpec, build_backbone
-from src.mlsys.search.metrics import RegressionMetrics, regression_metrics
-from src.mlsys.search.timing import Timer, reset_peak_gpu_memory
+from mlsys.datasets.registry import REQUIRED_SPLITS
+from mlsys.head import HeadTrainConfig, train_head
+from mlsys.models.registry import ModelSpec, build_backbone
+from mlsys.search.metrics import RegressionMetrics, regression_metrics
+from mlsys.search.timing import Timer, reset_peak_gpu_memory
 
 if TYPE_CHECKING:
-    from src.mlsys.datasets import LoadedDataset, Row
-    from src.mlsys.models.backbone import Backbone
+    from mlsys.datasets import LoadedDataset, Row
+    from mlsys.models.backbone import Backbone
 
 
 @dataclass

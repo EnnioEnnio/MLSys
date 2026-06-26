@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.mlsys.datasets import render_template
+from mlsys.datasets import render_template
 
 TEMPLATE = "description: {description}, variety: {variety}, country: {country}, price: {price} USD"
 

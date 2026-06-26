@@ -11,7 +11,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from src.mlsys.models.adapters.transformers_encoder import _pool  # noqa: E402
+from mlsys.models.adapters.transformers_encoder import _pool  # noqa: E402
 
 
 def _hidden_and_mask() -> tuple[torch.Tensor, torch.Tensor]:

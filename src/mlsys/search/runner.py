@@ -111,7 +111,6 @@ def score_candidate(
     head_config: HeadTrainConfig | None = None,
     head_repeats: int = 3,
     reuse_seeds: bool = True,
-
 ) -> RunRecord:
     """Train an FC head on `dataset` using embeddings from `spec`'s backbone, score on test.
 
@@ -124,8 +123,6 @@ def score_candidate(
     seeds = [None] * head_repeats
     if reuse_seeds:
         seeds = [torch.randint(0, 2**32 - 1, (1,)).item() for _ in range(head_repeats)]
-
-
 
     with timer.section("prepare_model_s"):
         backbone = build_backbone(spec, device=device)

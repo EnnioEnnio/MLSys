@@ -44,6 +44,7 @@ def test_train_head_rejects_empty_split() -> None:
     with pytest.raises(ValueError, match="non-empty"):
         train_head(x, y, empty_x, empty_y, cfg)
 
+
 def test_seed_produces_identical_initial_weights() -> None:
     d = 16
     x = torch.randn(10, d)

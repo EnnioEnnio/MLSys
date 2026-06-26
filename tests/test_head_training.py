@@ -53,5 +53,5 @@ def test_seed_produces_identical_initial_weights() -> None:
     result1 = train_head(x, y, x, y, cfg, seed=42)
     result2 = train_head(x, y, x, y, cfg, seed=42)
 
-    for p1, p2 in zip(result1.head.parameters(), result2.head.parameters()):
+    for p1, p2 in zip(result1.head.parameters(), result2.head.parameters(), strict=True):
         assert torch.equal(p1, p2)

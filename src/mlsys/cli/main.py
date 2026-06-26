@@ -32,7 +32,8 @@ def _setup_logging(verbose: bool) -> None:
 
     The root logger stays at WARNING so noisy third-party libraries (httpx,
     sentence_transformers, urllib3, …) don't flood the output with request logs;
-    only our own ``mlsys.*`` loggers are lowered to INFO/DEBUG.
+    only the loggers we care about (our own ``mlsys.*`` plus ``wandb``) are
+    lowered to INFO/DEBUG.
     """
     logging.basicConfig(
         level=logging.WARNING,
@@ -41,6 +42,8 @@ def _setup_logging(verbose: bool) -> None:
         stream=sys.stderr,
     )
     logging.getLogger("mlsys").setLevel(logging.DEBUG if verbose else logging.INFO)
+    # Keep W&B's run banner / sync messages (logged at INFO) visible.
+    logging.getLogger("wandb").setLevel(logging.INFO)
 
 
 def _build_parser() -> argparse.ArgumentParser:

@@ -76,8 +76,8 @@ def train_head(
         )
     if seed is not None:
         torch.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
     device = x_train.device
     head = FCHead(in_dim=x_train.size(1), hidden=config.hidden).to(device)
     optim = torch.optim.AdamW(head.parameters(), lr=config.lr, weight_decay=config.weight_decay)

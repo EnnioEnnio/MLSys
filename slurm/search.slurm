@@ -18,7 +18,7 @@
 # IMPORTANT: Update REPO_PATH below to match your cluster home directory path.
 # NOTE: Excludes V100 GPUs (CUDA 7.0) since PyTorch 25.03 requires CUDA capability >= 7.5.
 #
-# Strategy selection (override via `sbatch --export=STRATEGY=<name>`):
+# Strategy selection (edit the STRATEGY variable below):
 #   frozen     — FC head on the frozen backbone; cheap proxy ranking.
 #                Fast. Does NOT produce regret.json.
 #   finetune   — Unfreeze backbone + train backbone+head jointly; ground-truth scores.
@@ -64,10 +64,10 @@ fi
 pip install --no-cache-dir -e /workspace
 '
 
-# Default to full_eval; override at submission time with --export=STRATEGY=<name>.
-STRATEGY=${STRATEGY:-full_eval}
-
 # Step 2: Run model search
+# Search strategy for this run (see header for options). Edit and re-submit to change.
+STRATEGY=full_eval
+
 echo "Running model search (strategy=$STRATEGY)..."
 # expandable_segments lets the CUDA allocator grow/shrink segments instead of
 # locking fixed-size blocks, so reserved memory from one backbone can be reused

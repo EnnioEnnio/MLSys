@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
@@ -26,8 +27,24 @@ def _default_device() -> str:
     return "cpu"
 
 
+def _setup_logging(verbose: bool) -> None:
+    """Send progress logs to stderr. ``-v`` drops to DEBUG to also show per-substep timing."""
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stderr,
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mlsys", description=__doc__)
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="DEBUG logging: show each candidate's per-substep timing as it runs",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     search = sub.add_parser("search", help="Run a model search over a dataset.")
@@ -118,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         pass
 
     args = _build_parser().parse_args(argv)
+    _setup_logging(getattr(args, "verbose", False))
 
     if args.command == "list-models":
         for spec in load_model_specs().values():
@@ -151,6 +169,15 @@ def _run_search(args: argparse.Namespace) -> int:
             "is not yet wired. Continuing without on-disk caching.",
             file=sys.stderr,
         )
+
+    log = logging.getLogger("mlsys.cli")
+    log.info(
+        "search: dataset=%s strategy=%s device=%s output_dir=%s",
+        args.dataset,
+        args.strategy,
+        device,
+        output_dir,
+    )
 
     dataset = load_dataset(args.dataset)
     model_names = [m.strip() for m in args.models.split(",")] if args.models else None

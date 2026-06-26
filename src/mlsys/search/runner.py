@@ -122,7 +122,7 @@ def score_candidate(
     """
     head_config = head_config or HeadTrainConfig()
     reset_peak_gpu_memory()
-    timer = Timer()
+    timer = Timer(label=f"frozen:{spec.name}")
 
     with timer.section("prepare_model_s"):
         backbone = build_backbone(spec, device=device)
@@ -198,7 +198,7 @@ def finetune_candidate(
     head_config = head_config or HeadTrainConfig()
     finetune_config = finetune_config or FinetuneConfig()
     reset_peak_gpu_memory()
-    timer = Timer()
+    timer = Timer(label=f"finetune:{spec.name}")
 
     with timer.section("prepare_model_s"):
         backbone = build_backbone(spec, device=device)

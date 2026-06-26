@@ -16,6 +16,7 @@ distinguishes frozen vs finetune rows in a full_eval run).
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -35,7 +36,12 @@ from mlsys.search.runner import (
 if TYPE_CHECKING:
     from mlsys.datasets import LoadedDataset
 
+log = logging.getLogger(__name__)
+
 STRATEGIES = ("frozen", "finetune", "full_eval")
+
+# Wall-clock substep fields summed for the per-candidate "done in Ns" log line.
+_TIMING_KEYS = ("prepare_model_s", "prepare_data_s", "inference_s", "train_head_s", "eval_s")
 
 
 def _resolve_models(model_names: Iterable[str] | None) -> list[ModelSpec]:
@@ -58,12 +64,27 @@ def _run_pass(
     device: str,
     wandb_run: object | None,
     table_name: str,
+    pass_name: str,
 ) -> list[RunRecord]:
     """Score every candidate with ``candidate_fn``, appending each row to ``out_path``."""
+    total = len(specs)
+    log.info("%s pass: %d model(s) on %s", pass_name, total, device)
     records: list[RunRecord] = []
     with JsonlWriter(out_path) as writer:
-        for spec in specs:
+        for i, spec in enumerate(specs, start=1):
+            log.info("[%s %d/%d] %s — starting", pass_name, i, total, spec.name)
             record = candidate_fn(spec)
+            total_s = sum(record.timing.get(k, 0.0) for k in _TIMING_KEYS)
+            log.info(
+                "[%s %d/%d] %s — done: r2=%.4f mse=%.4f in %.1fs",
+                pass_name,
+                i,
+                total,
+                spec.name,
+                record.metrics.r2,
+                record.metrics.mse,
+                total_s,
+            )
             writer.write(record.to_dict())
             records.append(record)
             if wandb_run is not None:
@@ -71,6 +92,7 @@ def _run_pass(
             # Per-candidate GPU tensors are now dereferenced; reclaim them so the
             # next candidate starts clean.
             release_gpu_memory(device)
+    log.info("%s pass complete: %d row(s) written", pass_name, len(records))
     if wandb_run is not None:
         _log_results_table(records, name=table_name)
     return records
@@ -95,6 +117,7 @@ def run_frozen(
         device=device,
         wandb_run=wandb_run,
         table_name="results_frozen",
+        pass_name="frozen",
         candidate_fn=lambda spec: score_candidate(
             dataset,
             spec,
@@ -126,6 +149,7 @@ def run_finetune(
         device=device,
         wandb_run=wandb_run,
         table_name="results_finetune",
+        pass_name="finetune",
         candidate_fn=lambda spec: finetune_candidate(
             dataset,
             spec,
@@ -155,6 +179,7 @@ def run_full_eval(
     The proxy ranking is the frozen r2 (desc); the ground-truth scores are the finetune r2.
     Returns frozen rows followed by finetune rows.
     """
+    log.info("full_eval on %s: phase 1/3 — frozen (proxy ranking)", dataset.spec.name)
     frozen = run_frozen(
         dataset,
         output_dir,
@@ -165,6 +190,7 @@ def run_full_eval(
         head_repeats=head_repeats,
         wandb_run=wandb_run,
     )
+    log.info("full_eval on %s: phase 2/3 — finetune (ground truth)", dataset.spec.name)
     finetune = run_finetune(
         dataset,
         output_dir,
@@ -177,10 +203,12 @@ def run_full_eval(
         wandb_run=wandb_run,
     )
 
+    log.info("full_eval on %s: phase 3/3 — computing regret curve", dataset.spec.name)
     frozen_r2 = {r.model: r.metrics.r2 for r in frozen}
     finetune_r2 = {r.model: r.metrics.r2 for r in finetune}
     proxy_ranking = sorted(frozen_r2, key=lambda m: frozen_r2[m], reverse=True)
     curve = regret_curve(proxy_ranking, finetune_r2)
+    log.info("proxy ranking (frozen r2 desc): %s", ", ".join(proxy_ranking))
 
     _write_regret_json(output_dir, dataset, proxy_ranking, frozen_r2, finetune_r2, curve)
     if wandb_run is not None:

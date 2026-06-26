@@ -20,14 +20,11 @@
 #
 # Strategy selection (override via `sbatch --export=STRATEGY=<name>`):
 #   frozen     — FC head on the frozen backbone; cheap proxy ranking.
-#                Fast (~30 min). Does NOT produce regret.json.
-#                Example: sbatch --export=STRATEGY=frozen search.slurm
+#                Fast. Does NOT produce regret.json.
 #   finetune   — Unfreeze backbone + train backbone+head jointly; ground-truth scores.
-#                Expensive (~2 h). Does NOT produce regret.json.
-#                Example: sbatch --export=STRATEGY=finetune search.slurm
+#                Expensive. Does NOT produce regret.json.
 #   full_eval  — Both passes over the pool, then writes the regret-vs-budget curve.
-#                Most expensive (~4 h). Produces both results.jsonl and regret.json.
-#                Example: sbatch --export=STRATEGY=full_eval search.slurm  (default)
+#                Most expensive. Produces both results.jsonl and regret.json.
 # Adjust --time above to match the chosen strategy.
 
 # Fail loudly: any unset var, failed command, or broken pipe aborts the job

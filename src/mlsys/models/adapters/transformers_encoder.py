@@ -65,8 +65,13 @@ class TransformersEncoderBackbone:
         if tokenizer is None:
             raise RuntimeError(f"AutoTokenizer returned None for {spec.hf_repo!r}")
         self._tokenizer = tokenizer
+        # Force fp32 on load: some checkpoints (e.g. deberta-v3) carry torch_dtype=fp16
+        # in their config, so AutoModel would otherwise emit Half embeddings. The whole
+        # pipeline assumes float32 (the frozen path casts at runner.py; the finetune path
+        # feeds embeddings straight into the fp32 head), and fine-tuning a backbone in raw
+        # fp16 under plain AdamW (no GradScaler) is numerically fragile.
         self._model = AutoModel.from_pretrained(
-            spec.hf_repo, use_safetensors=True, trust_remote_code=trc
+            spec.hf_repo, use_safetensors=True, trust_remote_code=trc, torch_dtype=torch.float32
         ).to(device)
         self._model.eval()
         self._torch = torch

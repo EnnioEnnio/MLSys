@@ -52,12 +52,13 @@ class SentenceTransformersBackbone:
 
     def encode_trainable(self, texts: list[str]) -> torch.Tensor:
         # `.encode()` runs the forward pass under no_grad internally, so it can't be
-        # used for fine-tuning. Drive the underlying module API instead: tokenize →
+        # used for fine-tuning. Drive the underlying module API instead: preprocess →
         # move features to device → forward, which keeps the graph attached so grads
         # reach the backbone. Returns the pooled 'sentence_embedding' [B, embedding_dim].
         if self._input_prefix:
             texts = [self._input_prefix + t for t in texts]
-        features = self._model.tokenize(texts)
+        # ty flags list invariance here; `str` is a valid preprocess input element.
+        features = self._model.preprocess(texts)  # ty: ignore[invalid-argument-type]
         features = {k: (v.to(self._device) if hasattr(v, "to") else v) for k, v in features.items()}
         return self._model(features)["sentence_embedding"]
 

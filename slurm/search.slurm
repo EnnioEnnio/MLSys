@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -A {account_name}
 #SBATCH --mail-type=ALL
-#SBATCH --mail-user=slack:simon.schoettner
+#SBATCH --mail-user=slack:<YOUR_USERNAME>
 #SBATCH --partition=gpu-batch
 #SBATCH -C ARCH:X86
 #SBATCH --time=2:00:00
@@ -31,10 +31,7 @@
 # non-zero so SLURM/CI don't treat a failed setup as success.
 set -euo pipefail
 
-REPO_PATH=/sc/projects/sci-rabl/mlsys2026/jitr/MLSys
-
-# Default to full_eval; override at submission time with --export=STRATEGY=<name>.
-STRATEGY=${STRATEGY:-full_eval}
+REPO_PATH=/sc/projects/<GROUP>/<Project>/<*Path>
 
 echo "Starting mlsys search job"
 echo "Job ID: $SLURM_JOB_ID"
@@ -66,6 +63,9 @@ fi
 
 pip install --no-cache-dir -e /workspace
 '
+
+# Default to full_eval; override at submission time with --export=STRATEGY=<name>.
+STRATEGY=${STRATEGY:-full_eval}
 
 # Step 2: Run model search
 echo "Running model search (strategy=$STRATEGY)..."

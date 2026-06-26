@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -110,18 +110,17 @@ def score_candidate(
     batch_size: int = 64,
     head_config: HeadTrainConfig | None = None,
     head_repeats: int = 3,
-    reuse_seeds: bool = True,
+    seeds: Sequence[int | None] | None = None,
 ) -> RunRecord:
     """Train an FC head on `dataset` using embeddings from `spec`'s backbone, score on test.
 
-    The head is trained `head_repeats` times from different random initialisations or from the same
-    seeds and the test predictions are averaged, reducing variance.
+    The head is trained `head_repeats` times with the provided seeds (or random ones if not given)
+    and the test predictions are averaged, reducing variance.
     """
     head_config = head_config or HeadTrainConfig()
     reset_peak_gpu_memory()
     timer = Timer()
-    seeds = [None] * head_repeats
-    if reuse_seeds:
+    if seeds is None:
         seeds = [int(torch.randint(0, 2**32 - 1, (1,)).item()) for _ in range(head_repeats)]
 
     with timer.section("prepare_model_s"):

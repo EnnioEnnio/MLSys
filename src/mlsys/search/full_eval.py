@@ -6,6 +6,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import torch
+
 from mlsys.head import HeadTrainConfig
 from mlsys.io import JsonlWriter, results_path
 from mlsys.models.registry import ModelSpec, load_specs
@@ -41,6 +43,7 @@ def full_eval(
     """Score every (resolved) candidate; append each row to results.jsonl."""
     specs = _resolve_models(model_names)
     out_path = results_path(output_dir)
+    seeds = [int(torch.randint(0, 2**32 - 1, (1,)).item()) for _ in range(head_repeats)]
     records: list[RunRecord] = []
     with JsonlWriter(out_path) as writer:
         for spec in specs:
@@ -51,6 +54,7 @@ def full_eval(
                 batch_size=batch_size,
                 head_config=head_config,
                 head_repeats=head_repeats,
+                seeds=seeds,
             )
             writer.write(record.to_dict())
             records.append(record)

@@ -122,7 +122,7 @@ def score_candidate(
     timer = Timer()
     seeds = [None] * head_repeats
     if reuse_seeds:
-        seeds = [torch.randint(0, 2**32 - 1, (1,)).item() for _ in range(head_repeats)]
+        seeds = [int(torch.randint(0, 2**32 - 1, (1,)).item()) for _ in range(head_repeats)]
 
     with timer.section("prepare_model_s"):
         backbone = build_backbone(spec, device=device)

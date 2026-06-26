@@ -28,13 +28,19 @@ def _default_device() -> str:
 
 
 def _setup_logging(verbose: bool) -> None:
-    """Send progress logs to stderr. ``-v`` drops to DEBUG to also show per-substep timing."""
+    """Send progress logs to stderr. ``-v`` drops to DEBUG to also show per-substep timing.
+
+    The root logger stays at WARNING so noisy third-party libraries (httpx,
+    sentence_transformers, urllib3, …) don't flood the output with request logs;
+    only our own ``mlsys.*`` loggers are lowered to INFO/DEBUG.
+    """
     logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
+        level=logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
         stream=sys.stderr,
     )
+    logging.getLogger("mlsys").setLevel(logging.DEBUG if verbose else logging.INFO)
 
 
 def _build_parser() -> argparse.ArgumentParser:

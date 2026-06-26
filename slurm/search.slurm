@@ -4,7 +4,7 @@
 #SBATCH --mail-user=slack:<YOUR_USERNAME>
 #SBATCH --partition=gpu-batch
 #SBATCH -C ARCH:X86
-#SBATCH --time=2:00:00
+#SBATCH --time=12:00:00
 #SBATCH --gpus=a100:1
 #SBATCH --mem=64G
 #SBATCH --job-name=mlsys-search
@@ -79,7 +79,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # they are accepted but ignored by the frozen strategy.
 FINETUNE_ARGS=""
 if [[ "$STRATEGY" == "finetune" || "$STRATEGY" == "full_eval" ]]; then
-  FINETUNE_ARGS="--finetune-epochs 8 --finetune-lr 2e-5 --finetune-batch-size 16"
+  FINETUNE_ARGS="--finetune-epochs 3 --finetune-lr 2e-5 --finetune-batch-size 64"
 fi
 
 srun --container-name=$CONTAINER_NAME \
@@ -89,6 +89,7 @@ srun --container-name=$CONTAINER_NAME \
      python -m mlsys search \
        --dataset wine_reviews \
        --strategy $STRATEGY \
+       --hidden 0 \
        --output-dir /workspace/runs/$SLURM_JOB_ID \
        $FINETUNE_ARGS \
        --wandb

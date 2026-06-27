@@ -40,6 +40,7 @@ def _pool(hidden: torch.Tensor, attention_mask: torch.Tensor, how: str) -> torch
 class TransformersEncoderBackbone:
     name: str
     embedding_dim: int
+    can_finetune: bool = True
 
     def __init__(self, spec: ModelSpec, device: str) -> None:
         import torch
@@ -64,13 +65,18 @@ class TransformersEncoderBackbone:
         if tokenizer is None:
             raise RuntimeError(f"AutoTokenizer returned None for {spec.hf_repo!r}")
         self._tokenizer = tokenizer
+        # Force fp32 on load: some checkpoints (e.g. deberta-v3) carry torch_dtype=fp16
+        # in their config, so AutoModel would otherwise emit Half embeddings. The whole
+        # pipeline assumes float32 (the frozen path casts at runner.py; the finetune path
+        # feeds embeddings straight into the fp32 head), and fine-tuning a backbone in raw
+        # fp16 under plain AdamW (no GradScaler) is numerically fragile.
         self._model = AutoModel.from_pretrained(
-            spec.hf_repo, use_safetensors=True, trust_remote_code=trc
+            spec.hf_repo, use_safetensors=True, trust_remote_code=trc, torch_dtype=torch.float32
         ).to(device)
         self._model.eval()
         self._torch = torch
 
-    def encode(self, texts: list[str]) -> torch.Tensor:
+    def _tokenize(self, texts: list[str]) -> dict[str, torch.Tensor]:
         if self._input_prefix:
             texts = [self._input_prefix + t for t in texts]
         tok_kwargs: dict[str, object] = {
@@ -81,11 +87,29 @@ class TransformersEncoderBackbone:
         if self._max_length is not None:
             tok_kwargs["max_length"] = self._max_length
         batch = self._tokenizer(texts, **tok_kwargs)
-        batch = {k: v.to(self._device) for k, v in batch.items()}
+        return {k: v.to(self._device) for k, v in batch.items()}
+
+    def encode(self, texts: list[str]) -> torch.Tensor:
+        batch = self._tokenize(texts)
         with self._torch.inference_mode():
             out = self._model(**batch)
-        hidden = out.last_hidden_state
-        return _pool(hidden, batch["attention_mask"], self._pooling)
+        return _pool(out.last_hidden_state, batch["attention_mask"], self._pooling)
+
+    def encode_trainable(self, texts: list[str]) -> torch.Tensor:
+        # Same forward + pooling as encode(), but WITHOUT inference_mode so gradients
+        # flow back into the backbone. Caller is responsible for train()/eval() mode.
+        batch = self._tokenize(texts)
+        out = self._model(**batch)
+        return _pool(out.last_hidden_state, batch["attention_mask"], self._pooling)
+
+    def parameters(self) -> object:
+        return self._model.parameters()
+
+    def train(self) -> None:
+        self._model.train()
+
+    def eval(self) -> None:
+        self._model.eval()
 
 
 def _build(spec: ModelSpec, device: str) -> TransformersEncoderBackbone:

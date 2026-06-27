@@ -20,7 +20,7 @@ from mlsys.datasets import LoadedDataset, Row  # noqa: E402
 from mlsys.datasets.registry import DatasetSpec  # noqa: E402
 from mlsys.head import HeadTrainConfig  # noqa: E402
 from mlsys.models.registry import _ADAPTERS, ModelSpec, register_adapter  # noqa: E402
-from mlsys.search.full_eval import full_eval  # noqa: E402
+from mlsys.search.full_eval import run_frozen  # noqa: E402
 
 
 class _FakeBackbone:
@@ -109,7 +109,7 @@ def test_full_eval_writes_one_row_per_model(
 
     dataset = _FakeDataset(name="synthetic")
     out_dir = tmp_path / "run"
-    records = full_eval(
+    records = run_frozen(
         cast(LoadedDataset, dataset),
         output_dir=out_dir,
         device="cpu",

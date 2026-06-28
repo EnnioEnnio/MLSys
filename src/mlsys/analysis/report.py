@@ -315,7 +315,9 @@ def _assemble_summary(
     # 7. distribution, ranking stability & cost (new gaps from the deck)
     parts.append(_section7(triples, comparison, out_dir))
 
-    return "\n".join(parts)
+    # Every part already carries its own trailing newline (and section markers their own leading
+    # blank line), so join with "" — "\n".join would double every blank line.
+    return "".join(parts)
 
 
 def _section7(

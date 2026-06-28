@@ -55,6 +55,13 @@ class Comparison:
     per_head: pd.DataFrame
     diverged: pd.DataFrame
     cost: pd.DataFrame
+    # § 7 tables
+    frozen_distribution: pd.DataFrame
+    head_gain: pd.DataFrame
+    epochs: pd.DataFrame
+    head_rank_agreement: pd.DataFrame
+    frozen_timing_share: pd.DataFrame
+    value_frontier: pd.DataFrame
 
 
 def _ensure_regret_csv(tf: loader._TripleFiles, triple: Triple) -> None:
@@ -155,6 +162,20 @@ def _build_comparison(triples: list[Triple], out_dir: Path) -> Comparison:
     tables.write_table(diverged, comp_dir / "diverged_models")
     tables.write_table(cost, comp_dir / "cost_table")
 
+    # §7 tables
+    frozen_distribution = tables.frozen_distribution_table(triples)
+    head_gain = tables.head_gain_table(triples)
+    epochs = tables.epochs_table(triples)
+    head_rank_agreement = tables.head_rank_agreement_matrix(triples)
+    frozen_timing_share = tables.frozen_timing_share_table(triples)
+    value_frontier = tables.value_frontier_table(triples)
+    tables.write_table(frozen_distribution, comp_dir / "frozen_distribution")
+    tables.write_table(head_gain, comp_dir / "head_gain")
+    tables.write_table(epochs, comp_dir / "epochs_table")
+    tables.write_table(head_rank_agreement, comp_dir / "head_rank_agreement")
+    tables.write_table(frozen_timing_share, comp_dir / "frozen_timing_share")
+    tables.write_table(value_frontier, comp_dir / "value_frontier")
+
     png = {
         "regret_curves_by_head": plots.plot_regret_curves_by_head(triples, comp_dir),
         "regret_at1_vs_head": plots.plot_regret_at1_vs_head(triples, comp_dir),
@@ -164,6 +185,11 @@ def _build_comparison(triples: list[Triple], out_dir: Path) -> Comparison:
         "divergence_map": plots.plot_divergence_map(triples, comp_dir),
         "proxy_rank_spearman_vs_head": plots.plot_proxy_rank_spearman_vs_head(triples, comp_dir),
         "cost_vs_head": plots.plot_cost_vs_head(triples, comp_dir),
+        # §7 plots
+        "epochs_vs_head": plots.plot_epochs_vs_head(triples, comp_dir),
+        "head_rank_agreement": plots.plot_head_rank_agreement(triples, comp_dir),
+        "frozen_timing_share": plots.plot_frozen_timing_share(triples, comp_dir),
+        "value_frontier": plots.plot_value_frontier(triples, comp_dir),
     }
     return Comparison(
         dir=comp_dir,
@@ -173,6 +199,12 @@ def _build_comparison(triples: list[Triple], out_dir: Path) -> Comparison:
         per_head=per_head,
         diverged=diverged,
         cost=cost,
+        frozen_distribution=frozen_distribution,
+        head_gain=head_gain,
+        epochs=epochs,
+        head_rank_agreement=head_rank_agreement,
+        frozen_timing_share=frozen_timing_share,
+        value_frontier=value_frontier,
     )
 
 
@@ -213,7 +245,18 @@ def _assemble_summary(
         parts.append(_img(ph.png["proxy_scatter"], out_dir))
 
     # 2. finetune (with divergence / spearman-vs-r2 story)
+    n_diverged_any = sum(1 for t in triples for d in t.diverged.values() if d)
+    diverged_guardrail = (
+        f"> **Caveat:** {n_diverged_any} model/head combinations have finetune r² < 0 "
+        "(training instability — backbone diverged). Their finetune ground truth and the "
+        "regret derived from it are unreliable; caveat accordingly when interpreting regret "
+        "numbers that involve these models.\n"
+        if n_diverged_any > 0
+        else ""
+    )
     parts.append("\n## 2. Finetune results (ground truth)\n")
+    if diverged_guardrail:
+        parts.append(diverged_guardrail)
     for t in triples:
         ph = per_head[t.head]
         cols = [
@@ -269,7 +312,102 @@ def _assemble_summary(
     # 6. synthesis stubs (templated numbers; prose for Claude)
     parts.append(_synthesis_section(triples, per_head, comparison))
 
+    # 7. distribution, ranking stability & cost (new gaps from the deck)
+    parts.append(_section7(triples, comparison, out_dir))
+
     return "\n".join(parts)
+
+
+def _section7(
+    triples: list[Triple],
+    comparison: Comparison,
+    out_dir: Path,
+) -> str:
+    """§7: distribution, ranking stability & cost — six sub-sections, one per deck gap."""
+    md = tables.df_to_markdown
+    cpng = comparison.png
+    lines: list[str] = ["\n## 7. Distribution, ranking stability & cost\n"]
+
+    # 7.1 Spread-collapse (#1)
+    lines.append("### 7.1 Frozen r² spread per head\n")
+    lines.append(md(comparison.frozen_distribution))
+    dist = comparison.frozen_distribution
+    if not dist.empty:
+        std_vals = dist["std_frozen_r2"].tolist()
+        std_str = " → ".join(f"{v:.2f}" for v in std_vals)
+        n_neg_total = int(dist["n_negative"].sum())
+        lines.append(
+            f"- **std_frozen_r2 across heads:** {std_str}  <!-- prose: spread-collapse story -->"
+        )
+        lines.append(
+            f"- **total n_negative frozen r² (all heads):** {n_neg_total}  <!-- prose: -->\n"
+        )
+
+    # 7.2 Per-model gain narrowest→widest (#2)
+    lines.append("### 7.2 Per-model Δ frozen r² (narrowest → widest head)\n")
+    lines.append(md(comparison.head_gain))
+    gain = comparison.head_gain
+    if not gain.empty:
+        top = gain.iloc[0]
+        lines.append(
+            f"- **biggest gainer:** {top['model']} (+{top['gain']:.4f})  <!-- prose: -->\n"
+        )
+
+    # 7.3 Early-stopping epochs (#3)
+    lines.append("### 7.3 Early-stopping epochs\n")
+    lines.append(md(comparison.epochs))
+    lines.append(_img(cpng["epochs_vs_head"], out_dir))
+    ep = comparison.epochs
+    if not ep.empty and "n_frozen_at_cap" in ep.columns:
+        at_cap_str = ", ".join(
+            f"{row['head']}={int(row['n_frozen_at_cap'])}/{len(triples[0].models)}"
+            for _, row in ep.iterrows()
+        )
+        lines.append(
+            f"- **n_frozen_at_cap per head:** {at_cap_str}  <!-- prose: early-stop story -->\n"
+        )
+
+    # 7.4 Head x head rank agreement (#4)
+    lines.append("### 7.4 Head x head frozen-r2 rank agreement (Spearman rho)\n")
+    lines.append(md(comparison.head_rank_agreement))
+    lines.append(_img(cpng["head_rank_agreement"], out_dir))
+    hrm = comparison.head_rank_agreement
+    if len(hrm) > 1:
+        # off-diagonal minimum (ignoring the index/head column)
+        numeric = hrm.drop(columns=["head"], errors="ignore").to_numpy(dtype=float)
+        import numpy as np
+
+        mask = ~np.eye(len(numeric), dtype=bool)
+        min_rho = float(numeric[mask].min()) if mask.any() else float("nan")
+        lines.append(
+            f"- **min off-diagonal rho:** {min_rho:.2f}  <!-- prose: ranking stability -->\n"
+        )
+
+    # 7.5 Frozen timing substep share (#5)
+    lines.append("### 7.5 Frozen timing substep share\n")
+    lines.append(md(comparison.frozen_timing_share))
+    lines.append(_img(cpng["frozen_timing_share"], out_dir))
+    fts = comparison.frozen_timing_share
+    if not fts.empty and "inference_pct" in fts.columns:
+        inf_min = float(fts["inference_pct"].min())
+        inf_max = float(fts["inference_pct"].max())
+        lines.append(
+            f"- **inference_pct range:** {inf_min:.0f}-{inf_max:.0f}%"
+            "  <!-- prose: backbone dominates -->\n"
+        )
+
+    # 7.6 Inference value-frontier (#6)
+    widest_head = triples[-1].head if triples else "?"
+    lines.append(
+        f"### 7.6 Inference value-frontier (widest head: {widest_head})\n"
+        f"> Note: frontier uses the widest head ({widest_head}) — "
+        "`inference_s` is backbone-bound / head-independent so the cost column is comparable "
+        "across any head; widest head gives the best r² cut.\n"
+    )
+    lines.append(md(comparison.value_frontier))
+    lines.append(_img(cpng["value_frontier"], out_dir))
+
+    return "\n".join(lines)
 
 
 def _synthesis_section(

@@ -461,13 +461,15 @@ def _synthesis_section(
     ft_cost = float(row["finetune_train_head_s"])
     mem_fz = float(row["frozen_peak_gpu_mem_mb"])
     mem_ft = float(row["finetune_peak_gpu_mem_mb"])
+    cost_ratio = f"{ft_cost / fz_cost:.1f}x" if fz_cost > 0 else "n/a"
+    mem_ratio = f"{mem_ft / mem_fz:.1f}x" if mem_fz > 0 else "n/a"
     lines.append(f"For the best model (**{best_model}**, head {widest.head}):\n")
     lines.append(
-        f"- **finetune/frozen train cost ratio:** {ft_cost / fz_cost:.1f}x "
+        f"- **finetune/frozen train cost ratio:** {cost_ratio} "
         f"({ft_cost:.0f}s vs {fz_cost:.0f}s)  <!-- prose: -->"
     )
     lines.append(
-        f"- **finetune/frozen peak GPU mem ratio:** {mem_ft / mem_fz:.1f}x "
+        f"- **finetune/frozen peak GPU mem ratio:** {mem_ratio} "
         f"({mem_ft:.0f}MB vs {mem_fz:.0f}MB)  <!-- prose: -->\n"
     )
 

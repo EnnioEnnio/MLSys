@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from mlsys.analysis import theme
-from mlsys.analysis.regret_recompute import recompute_regret
+from mlsys.analysis.regret_recompute import triple_regret_df
 from mlsys.analysis.tables import budget_to_zero, rank_spearman
 
 if TYPE_CHECKING:
@@ -50,14 +50,6 @@ def _save(fig: Figure, out_dir: str | Path, slug: str) -> Path:
 
     plt.close(fig)
     return path
-
-
-def _regret_df(triple: Triple):
-    return (
-        triple.regret
-        if triple.regret is not None
-        else recompute_regret(triple.frozen, triple.finetune)
-    )
 
 
 # --------------------------------------------------------------------- per-triple quality
@@ -149,7 +141,7 @@ def plot_r2_delta(triple: Triple, out_dir: str | Path) -> Path:
 def plot_regret_curve(triple: Triple, out_dir: str | Path) -> Path:
     """(4) Regret + normalized_regret vs budget B. → ``regret_curve.png``."""
     plt, _ = _setup()
-    df = _regret_df(triple)
+    df = triple_regret_df(triple)
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(
         df["budget"],
@@ -316,7 +308,7 @@ def plot_regret_curves_by_head(triples: list[Triple], out_dir: str | Path) -> Pa
     plt, _ = _setup()
     fig, ax = plt.subplots(figsize=(8, 5.5))
     for t in triples:
-        df = _regret_df(t)
+        df = triple_regret_df(t)
         ax.plot(df["budget"], df["regret"], marker="o", label=t.head)
     ax.set_xlabel("budget B")
     ax.set_ylabel("regret (r²)")
@@ -331,7 +323,7 @@ def plot_regret_at1_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
     heads = [t.head for t in triples]
     at1, auc, b0 = [], [], []
     for t in triples:
-        df = _regret_df(t)
+        df = triple_regret_df(t)
         at1.append(float(df.iloc[0]["regret"]))
         auc.append(float(df["regret"].mean()))
         b0.append(budget_to_zero(df))

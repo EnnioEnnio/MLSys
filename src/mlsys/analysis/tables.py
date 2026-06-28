@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mlsys.analysis.regret_recompute import recompute_regret
+from mlsys.analysis.regret_recompute import triple_regret_df
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -126,13 +126,6 @@ def per_triple_table(triple: Triple) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _triple_regret_df(triple: Triple) -> pd.DataFrame:
-    """The triple's regret curve — the committed one if present, else recomputed."""
-    if triple.regret is not None:
-        return triple.regret
-    return recompute_regret(triple.frozen, triple.finetune)
-
-
 def rank_spearman(triple: Triple) -> float:
     """Spearman(frozen r², finetune r²) across models — does the cheap proxy rank like truth?"""
     from scipy.stats import spearmanr
@@ -156,7 +149,7 @@ def per_triple_summary(triple: Triple) -> TripleSummary:
     """Headline numbers for one head: best models, regret@1, budget-to-zero, proxy rank-rho."""
     fz = triple.frozen.set_index("model")["r2"]
     ft = triple.finetune.set_index("model")["r2"]
-    regret_df = _triple_regret_df(triple)
+    regret_df = triple_regret_df(triple)
     first = regret_df.iloc[0]
     return TripleSummary(
         head=triple.head,

@@ -20,7 +20,20 @@ from mlsys.search.regret import regret_curve
 if TYPE_CHECKING:
     import pandas as pd
 
+    from mlsys.analysis.loader import Triple
+
 _REGRET_COLUMNS = ("budget", "regret", "normalized_regret")
+
+
+def triple_regret_df(triple: Triple) -> pd.DataFrame:
+    """The triple's regret curve — the committed one if present, else recomputed.
+
+    Shared by ``plots.py`` and ``tables.py`` (which can't import from each other) so the
+    committed-vs-recompute fallback lives in exactly one place.
+    """
+    if triple.regret is not None:
+        return triple.regret
+    return recompute_regret(triple.frozen, triple.finetune)
 
 
 def _r2_map(frame: pd.DataFrame) -> dict[str, float]:

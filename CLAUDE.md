@@ -53,9 +53,13 @@ mlsys regret --frozen F.csv --finetune T.csv [--out R.csv]   # standalone regret
 ```
 
 Each **experiment** is a folder of CSVs (`results/<experiment>/`, e.g. `exp_wine_16`), one
-`full_eval` head config per run-id named `<runid>_<strategy>_<num>_model_<HEAD>_<kind>.csv`
+`full_eval` head config per run-id named `<runid>_<dataset>_<strategy>_<num>_model_<HEAD>_<kind>.csv`
 (`<kind>` ∈ frozen/finetune/regret; head label and width come from the filename, **not** the
-`head_type` column). `analyze` writes artifacts to `results/<experiment>/analysis/` by default
+`head_type` column). The stem up to `_<kind>` is exactly the W&B run name from
+`cli/main.py:_wandb_run_name` (strategy underscore-stripped, `full_eval`→`fulleval`; linear
+head is bare `FCH`, MLP is `MLP_<width>`) — download the CSV from W&B, append `_<kind>`, drop
+it in. `<dataset>` may contain underscores (`wine_reviews`); the loader anchors on the literal
+`model` token so it still round-trips. `analyze` writes artifacts to `results/<experiment>/analysis/` by default
 (`--out-dir` overrides). Regret is **r²-only** (no `--metric`), matching the pipeline. See
 `analysis.md` for the full plot/table catalog + crash-recovery recipe.
 

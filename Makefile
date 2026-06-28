@@ -1,4 +1,4 @@
-.PHONY: setup lint format typecheck test check clean
+.PHONY: setup lint format typecheck test test-integration check clean
 
 setup:
 	uv sync
@@ -15,6 +15,10 @@ typecheck:
 
 test:
 	uv run pytest -q
+
+# Real-model end-to-end tests (network + heavier deps); excluded from `test`/`check`.
+test-integration:
+	uv run pytest -m integration
 
 check: lint typecheck test
 	uv run ruff format --check .

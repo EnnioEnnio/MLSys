@@ -31,6 +31,7 @@ src/mlsys/models/     # backbone adapters (transformers / sentence-transformers 
 src/mlsys/head/       # FC regression head + trainer
 src/mlsys/finetune/   # joint backbone+head fine-tune loop (finetune/full_eval strategies)
 src/mlsys/search/     # strategy dispatch (frozen/finetune/full_eval), runner, regret, timing, metrics
+src/mlsys/analysis/   # turn full_eval CSVs into tables + plots + SUMMARY.md (see analysis.md)
 src/mlsys/io/         # results.jsonl writer
 config/               # datasets.yaml + models.yaml
 slurm/                # cluster launch scripts
@@ -91,6 +92,17 @@ sbatch slurm/search.slurm
 ```
 
 Results land in `runs/$SLURM_JOB_ID/results.jsonl` — one line per `(dataset, model, strategy)` with metrics + per-substep timing (plus `runs/$SLURM_JOB_ID/regret.json` under `--strategy full_eval`). See [slurm/README.md](slurm/README.md) for details.
+
+## Analysing results
+
+Turn a `full_eval` run's CSVs into tables, plots, and a single `SUMMARY.md` to hand to Claude for the report prose. Viz deps live in an optional group (`uv sync --group analysis`).
+
+```bash
+python -m mlsys analyze results/<experiment>                 # → results/<experiment>/analysis/SUMMARY.md
+python -m mlsys regret --frozen F.csv --finetune T.csv       # standalone regret recompute (crash recovery)
+```
+
+Full plot/table catalog, the folder/filename conventions, and the crash-recovery recipe are in **[analysis.md](analysis.md)**.
 
 ## Tooling at a glance
 

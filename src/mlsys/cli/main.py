@@ -129,6 +129,38 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("list-models", help="Dump models.yaml entries.")
     sub.add_parser("list-datasets", help="Dump datasets.yaml entries.")
 
+    analyze = sub.add_parser(
+        "analyze",
+        help="Build tables + plots + SUMMARY.md from a full_eval experiment folder.",
+    )
+    analyze.add_argument(
+        "experiment_dir",
+        help="folder of *_frozen/*_finetune/*_regret CSVs (one full_eval experiment)",
+    )
+    analyze.add_argument(
+        "--out-dir",
+        default=None,
+        help="where to write artifacts; default <experiment_dir>/analysis",
+    )
+
+    regret = sub.add_parser(
+        "regret",
+        help="Recompute a regret curve from a frozen + finetune CSV (crash recovery).",
+    )
+    regret.add_argument("--frozen", required=True, help="path to the *_frozen.csv")
+    regret.add_argument("--finetune", required=True, help="path to the *_finetune.csv")
+    regret.add_argument(
+        "--out",
+        default=None,
+        help="write the budget,regret,normalized_regret CSV here (default: stdout)",
+    )
+    regret.add_argument(
+        "--json",
+        dest="json_path",
+        default=None,
+        help="also write a regret.json-shaped payload here",
+    )
+
     return parser
 
 
@@ -165,7 +197,41 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "search":
         return _run_search(args)
 
+    if args.command == "analyze":
+        return _run_analyze(args)
+
+    if args.command == "regret":
+        return _run_regret(args)
+
     raise SystemExit(f"unknown command: {args.command}")
+
+
+def _run_analyze(args: argparse.Namespace) -> int:
+    # Heavy analysis deps (pandas/matplotlib/seaborn) are imported lazily inside the
+    # package so config-only commands stay fast (project convention).
+    from mlsys.analysis import analyze_experiment
+
+    summary = analyze_experiment(args.experiment_dir, out_dir=args.out_dir)
+    print(f"[mlsys] wrote analysis to {summary.parent} (see {summary})")
+    return 0
+
+
+def _run_regret(args: argparse.Namespace) -> int:
+    from mlsys.analysis import recompute_to_files
+
+    curve = recompute_to_files(
+        args.frozen,
+        args.finetune,
+        out_csv=args.out,
+        json_path=args.json_path,
+    )
+    if args.out:
+        print(f"[mlsys] wrote regret curve to {args.out}")
+    else:
+        print(curve.to_csv(index=False), end="")
+    if args.json_path:
+        print(f"[mlsys] wrote regret json to {args.json_path}", file=sys.stderr)
+    return 0
 
 
 def _run_search(args: argparse.Namespace) -> int:

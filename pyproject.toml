@@ -40,6 +40,22 @@ dev = [
     "ty>=0.0.33",
     "pre-commit>=4.0",
 ]
+# Result-analysis / report-generation deps. Kept out of core so the cluster/CI
+# install stays light (they're only needed to run `mlsys analyze` / `mlsys regret`
+# locally). Install with `uv sync --group analysis`; imported lazily inside
+# `mlsys.analysis.*` so config-only commands and CPU tests never pull them in.
+analysis = [
+    "pandas",
+    "matplotlib",
+    "seaborn",
+]
+
+[tool.uv]
+# `analysis` carries only light pure-Python/plotting deps (pandas/matplotlib/seaborn), so we
+# install it in dev environments by default — this keeps `ty check` (which must resolve the
+# lazy `import pandas` inside mlsys.analysis) green in CI. It is deliberately NOT in
+# `[project.dependencies]`, so the cluster's `pip install -e .` stays light (core deps only).
+default-groups = ["dev", "analysis"]
 
 [tool.ruff]
 line-length = 100

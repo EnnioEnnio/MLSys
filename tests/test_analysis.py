@@ -206,6 +206,158 @@ def test_table_builders_on_tiny_frames(tmp_path):
     assert md.startswith("| model |")
 
 
+# ----------------------------------------------------------------- new table builders
+
+
+def test_frozen_distribution_table(tmp_path):
+    pytest.importorskip("pandas")
+    from mlsys.analysis import tables
+
+    _write_triple(tmp_path, "100", "FCH", with_regret=True, head_type="linear")
+    _write_triple(tmp_path, "200", "MLP_512", with_regret=True)
+    tfs = loader.discover_triples(tmp_path)
+    triples = [loader.load_triple(tf) for tf in tfs]
+
+    df = tables.frozen_distribution_table(triples)
+    expected_cols = [
+        "head",
+        "mean_frozen_r2",
+        "std_frozen_r2",
+        "min_frozen_r2",
+        "max_frozen_r2",
+        "n_negative",
+    ]
+    assert list(df.columns) == expected_cols
+    assert len(df) == 2  # one row per head
+    # population std: frozen r2 = [0.5, 0.4, 0.3, 0.2], mean=0.35
+    # variance = ((0.15^2 + 0.05^2 + 0.05^2 + 0.15^2) / 4)
+    import math
+
+    expected_std = math.sqrt((0.0225 + 0.0025 + 0.0025 + 0.0225) / 4)
+    import pytest as _pytest
+
+    actual = df.loc[df["head"] == "FCH", "std_frozen_r2"].iloc[0]
+    assert actual == _pytest.approx(expected_std, abs=1e-6)
+
+
+def test_head_gain_table(tmp_path):
+    pytest.importorskip("pandas")
+    from mlsys.analysis import tables
+
+    _write_triple(tmp_path, "100", "FCH", with_regret=True, head_type="linear")
+    _write_triple(tmp_path, "200", "MLP_512", with_regret=True)
+    tfs = loader.discover_triples(tmp_path)
+    triples = [loader.load_triple(tf) for tf in tfs]
+
+    df = tables.head_gain_table(triples)
+    assert set(df.columns) >= {"model", "narrow_r2", "wide_r2", "gain"}
+    assert len(df) == 4  # 4 models
+    # Both heads have identical frozen data in _write_triple → gain = 0 for every model
+    assert all(abs(g) < 1e-9 for g in df["gain"])
+
+
+def test_epochs_table(tmp_path):
+    pytest.importorskip("pandas")
+    from mlsys.analysis import tables
+
+    _write_triple(tmp_path, "100", "FCH", with_regret=True, head_type="linear")
+    _write_triple(tmp_path, "200", "MLP_512", with_regret=True)
+    tfs = loader.discover_triples(tmp_path)
+    triples = [loader.load_triple(tf) for tf in tfs]
+
+    df = tables.epochs_table(triples)
+    assert set(df.columns) >= {
+        "head",
+        "mean_frozen_epochs",
+        "n_frozen_at_cap",
+        "frozen_cap",
+        "mean_finetune_epochs",
+    }
+    assert len(df) == 2
+    # All frozen rows have epochs_run=20, cap=20 → n_frozen_at_cap=4 (all 4 models hit cap)
+    assert df["frozen_cap"].iloc[0] == 20
+    assert df.loc[df["head"] == "FCH", "n_frozen_at_cap"].iloc[0] == 4
+
+
+def test_head_rank_agreement_matrix(tmp_path):
+    pytest.importorskip("pandas")
+    pytest.importorskip("scipy")
+    from mlsys.analysis import tables
+
+    _write_triple(tmp_path, "100", "FCH", with_regret=True, head_type="linear")
+    _write_triple(tmp_path, "200", "MLP_512", with_regret=True)
+    tfs = loader.discover_triples(tmp_path)
+    triples = [loader.load_triple(tf) for tf in tfs]
+
+    df = tables.head_rank_agreement_matrix(triples)
+    # head column + one column per head → 3 columns for 2 heads
+    assert "head" in df.columns
+    assert len(df) == 2  # 2 rows (one per head)
+    # Diagonal must be 1.0 (identical series -> Spearman rho=1)
+    for _i, row in df.iterrows():
+        head = row["head"]
+        assert abs(float(row[head]) - 1.0) < 1e-9
+
+
+def test_frozen_timing_share_table(tmp_path):
+    pytest.importorskip("pandas")
+    from mlsys.analysis import tables
+
+    _write_triple(tmp_path, "100", "MLP_128", with_regret=True)
+    (tf,) = loader.discover_triples(tmp_path)
+    triple = loader.load_triple(tf)
+
+    df = tables.frozen_timing_share_table([triple])
+    assert "head" in df.columns
+    assert "inference_pct" in df.columns
+    assert len(df) == 1
+    # All pct columns sum to 100
+    pct_cols = [
+        "prepare_model_pct",
+        "prepare_data_pct",
+        "inference_pct",
+        "train_head_pct",
+        "eval_pct",
+    ]
+    row_sum = sum(float(df[c].iloc[0]) for c in pct_cols)
+    assert abs(row_sum - 100.0) < 1e-6
+
+
+def test_value_frontier_table(tmp_path):
+    pytest.importorskip("pandas")
+    from mlsys.analysis import tables
+
+    _write_triple(tmp_path, "100", "FCH", with_regret=True, head_type="linear")
+    _write_triple(tmp_path, "200", "MLP_512", with_regret=True)
+    tfs = loader.discover_triples(tmp_path)
+    triples = [loader.load_triple(tf) for tf in tfs]
+
+    df = tables.value_frontier_table(triples)
+    assert set(df.columns) >= {
+        "model",
+        "frozen_inference_s",
+        "frozen_r2",
+        "finetune_r2",
+        "frozen_peak_gpu_mem_mb",
+    }
+    assert len(df) == 4  # 4 models, widest head
+    # Sorted by inference_s asc: m2v (2s) should appear before alpha/beta/gamma (10s)
+    assert df.iloc[0]["model"] == "m2v"
+
+
+def test_per_triple_table_has_frozen_epochs(tmp_path):
+    pytest.importorskip("pandas")
+    from mlsys.analysis import tables
+
+    _write_triple(tmp_path, "100", "MLP_128", with_regret=True)
+    (tf,) = loader.discover_triples(tmp_path)
+    triple = loader.load_triple(tf)
+
+    df = tables.per_triple_table(triple)
+    assert "frozen_epochs" in df.columns
+    assert list(df["frozen_epochs"]) == [20, 20, 20, 20]
+
+
 # ----------------------------------------------------------------- plot smoke
 
 
@@ -222,6 +374,31 @@ def test_plot_smoke_savefig(tmp_path):
     assert p.exists() and p.stat().st_size > 0
     p2 = plots.plot_heatmap_frozen_r2([triple], out)
     assert p2.exists() and p2.stat().st_size > 0
+
+
+def test_new_plots_smoke(tmp_path):
+    pytest.importorskip("pandas")
+    pytest.importorskip("seaborn")
+    pytest.importorskip("scipy")
+    from mlsys.analysis import plots
+
+    _write_triple(tmp_path, "100", "FCH", with_regret=True, head_type="linear")
+    _write_triple(tmp_path, "200", "MLP_512", with_regret=True)
+    tfs = loader.discover_triples(tmp_path)
+    triples = [loader.load_triple(tf) for tf in tfs]
+    out = tmp_path / "plots"
+
+    p_epochs = plots.plot_epochs_vs_head(triples, out)
+    assert p_epochs.exists() and p_epochs.stat().st_size > 0
+
+    p_rank = plots.plot_head_rank_agreement(triples, out)
+    assert p_rank.exists() and p_rank.stat().st_size > 0
+
+    p_timing = plots.plot_frozen_timing_share(triples, out)
+    assert p_timing.exists() and p_timing.stat().st_size > 0
+
+    p_frontier = plots.plot_value_frontier(triples, out)
+    assert p_frontier.exists() and p_frontier.stat().st_size > 0
 
 
 # ----------------------------------------------------------------- CLI smokes

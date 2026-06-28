@@ -143,6 +143,12 @@ adapting model search to regression; RQ2 = how bottlenecks shift.
 | `frozen_r2_matrix.*` / `finetune_r2_matrix.*` | model × head r² tables | §3 |
 | `diverged_models.*` | every diverged model's frozen→finetune r² + finetune ρ per head | §6 / RQ1 |
 | `cost_table.*` | per-(head,model) frozen total, finetune total, peak mem, epochs | RQ2 |
+| `frozen_distribution.*` | per-head frozen r² mean/std/min/max/n_negative — spread-collapse story | §7.1 |
+| `head_gain.*` | per-model Δ frozen r² narrowest→widest head — biggest gainers | §7.2 |
+| `epochs_table.*` | per-head mean frozen/finetune epochs, n-at-cap, cap | §7.3 |
+| `head_rank_agreement.*` | head × head Spearman ρ over frozen r² | §7.4 |
+| `frozen_timing_share.*` | per-head % share of each timing substep | §7.5 |
+| `value_frontier.*` | frozen inference_s vs r² at the widest head | §7.6 |
 | `regret_curves_by_head.png` | overlaid regret curves, one line per head | §4 |
 | `regret_at1_vs_head.png` | regret@1 / AUC / budget-to-zero vs head width | §4 |
 | `best_r2_vs_head.png` | best frozen & best finetune r² vs head width | §3 |
@@ -150,6 +156,10 @@ adapting model search to regression; RQ2 = how bottlenecks shift.
 | `divergence_map.png` | binary model × head map of `diverged` (finetune r² < 0) | RQ1 |
 | `proxy_rank_spearman_vs_head.png` | Spearman(frozen rank, finetune rank) per head | RQ1 |
 | `cost_vs_head.png` | mean finetune `train_head_s` & `peak_gpu_mem_mb` vs head width | RQ2 (R4) |
+| `epochs_vs_head.png` | mean frozen vs finetune epochs per head; annotated frozen cap | §7.3 |
+| `head_rank_agreement.png` | heatmap of head × head Spearman ρ matrix | §7.4 |
+| `frozen_timing_share.png` | horizontal 100%-stacked bar: substep % share per head | §7.5 |
+| `value_frontier.png` | scatter: frozen inference_s vs r² at the widest head, annotated | §7.6 |
 
 ### RQ2 timing semantics (read the stacked bars correctly)
 
@@ -162,10 +172,13 @@ finetune cost. The plots/labels say this explicitly.
 
 1. `mlsys analyze results/<experiment>` — generates all artifacts + `SUMMARY.md`.
 2. `SUMMARY.md` has a **fixed section order**: 0 metadata → 1 frozen → 2 finetune → 3
-   frozen-vs-finetune → 4 regret → 5 RQ2 bottlenecks → 6 RQ1/RQ2 synthesis stubs. Section 6
-   is *templated*: every number is pre-filled as `**metric:** <value>  <!-- prose: -->`, plus
-   a diverged-model table, so Claude writes narrative over given numbers rather than
-   re-deriving them from plots (the exact failure mode this tool prevents).
+   frozen-vs-finetune → 4 regret → 5 RQ2 bottlenecks → 6 RQ1/RQ2 synthesis stubs → 7
+   distribution, ranking stability & cost. Section 6 is *templated*: every number is
+   pre-filled as `**metric:** <value>  <!-- prose: -->`, plus a diverged-model table, so
+   Claude writes narrative over given numbers rather than re-deriving them from plots (the
+   exact failure mode this tool prevents). Section 7 adds the six analysis gaps from the
+   intermediate deck: frozen r² spread collapse, per-model head-gain, early-stopping epochs,
+   head × head rank agreement, frozen timing-substep share, and the inference value-frontier.
 3. Hand the whole `analysis/` folder (or just `SUMMARY.md`, which `![](...)`s the plots) to
    Claude and ask for the report prose. Claude fills the `<!-- prose: -->` slots; it should
    **not** regenerate artifacts.

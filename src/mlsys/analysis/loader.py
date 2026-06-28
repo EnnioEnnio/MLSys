@@ -163,18 +163,18 @@ def _flag_diverged(finetune: pd.DataFrame, skipped: dict[str, bool]) -> dict[str
     }
 
 
-def _flag_finetune_skipped(finetune: pd.DataFrame, head: str) -> dict[str, bool]:
+def _flag_finetune_skipped(finetune: pd.DataFrame) -> dict[str, bool]:
     """Detect model2vec ``can_finetune=False`` fallbacks (frozen score reused as finetune).
 
-    Primary, construction-invariant signal: a *real* finetune fuses inference into the joint
-    loop so ``inference_s == 0``; the fallback runs the frozen ``score_candidate`` and so
-    records a nonzero encode time. We corroborate with ``epochs_run``: real finetunes run
-    exactly the configured budget (inferred here as the mode of the non-skipped rows), while
-    the fallback runs the early-stopping frozen loop. Disagreement between the two signals is
-    a warning, not an error — the ``inference_s`` signal wins.
+    Construction-invariant signal: a *real* finetune fuses inference into the joint loop so
+    ``inference_s == 0``; the fallback runs the frozen ``score_candidate`` and so records a
+    nonzero encode time. ``epochs_run`` cannot corroborate this — ``train_full_model`` has the
+    same ``early_stop_patience`` early-stopping as the frozen head, so a real finetune does
+    *not* run a fixed budget and any epoch-count check would just flag every early-stopped
+    model. ``inference_s`` alone is the reliable signal.
     """
     inference = finetune["inference_s"] if "inference_s" in finetune.columns else None
-    skipped = {
+    return {
         str(model): bool(inf > 0.0)
         for model, inf in zip(
             finetune["model"],
@@ -182,31 +182,6 @@ def _flag_finetune_skipped(finetune: pd.DataFrame, head: str) -> dict[str, bool]
             strict=True,
         )
     }
-    if "epochs_run" in finetune.columns:
-        real_epochs = finetune.loc[~finetune["model"].map(skipped), "epochs_run"]
-        budget = int(real_epochs.mode().iloc[0]) if not real_epochs.empty else None
-        if budget is not None:
-            for model, epochs_raw in zip(finetune["model"], finetune["epochs_run"], strict=True):
-                model = str(model)
-                epochs = int(epochs_raw)
-                if skipped[model] and epochs == budget:
-                    log.warning(
-                        "%s/%s: inference_s>0 (looks skipped) but epochs_run==finetune budget "
-                        "%d — signals disagree; trusting inference_s",
-                        head,
-                        model,
-                        budget,
-                    )
-                elif not skipped[model] and epochs != budget:
-                    log.warning(
-                        "%s/%s: inference_s==0 (looks finetuned) but epochs_run=%d != budget %d "
-                        "— signals disagree; trusting inference_s",
-                        head,
-                        model,
-                        epochs,
-                        budget,
-                    )
-    return skipped
 
 
 def _crosscheck_head_type(df: pd.DataFrame, head: str, kind: str) -> None:
@@ -248,7 +223,7 @@ def load_triple(tf: _TripleFiles) -> Triple:
     _crosscheck_head_type(frozen, tf.head, "frozen")
     _crosscheck_head_type(finetune, tf.head, "finetune")
 
-    skipped = _flag_finetune_skipped(finetune, tf.head)
+    skipped = _flag_finetune_skipped(finetune)
     return Triple(
         run_id=tf.run_id,
         head=tf.head,

@@ -8,6 +8,10 @@ so the module works headless (CI / cluster / tmp smoke tests).
 RQ2 note encoded in the timing plots: in the **frozen** pass cost splits across
 ``inference_s`` (encode) + ``train_head_s`` (head fit); in the **finetune** pass inference is
 fused into the joint loop (``inference_s == 0``) so ``train_head_s`` is the end-to-end cost.
+
+Colours, markers, and colormaps come from ``theme.py`` — one consistent palette across every
+plot so frozen is always tan, finetune always burgundy, and each substep keeps one
+colour+hatch in every stacked-bar chart.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from mlsys.analysis import theme
 from mlsys.analysis.regret_recompute import recompute_regret
 from mlsys.analysis.tables import budget_to_zero, rank_spearman
 
@@ -25,14 +30,14 @@ if TYPE_CHECKING:
 
 
 def _setup():
-    """Lazy import + consistent report theme. Returns the (plt, sns) pair."""
+    """Lazy import + themed report style. Returns the (plt, sns) pair."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    sns.set_theme(style="whitegrid", context="notebook")
+    theme.apply_theme(plt, sns)
     return plt, sns
 
 
@@ -74,8 +79,8 @@ def plot_r2_frozen_vs_finetune(triple: Triple, out_dir: str | Path) -> Path:
         ]
     )
     fig, ax = plt.subplots(figsize=(max(8, len(triple.models)), 5))
-    sns.barplot(long, x="model", y="r2", hue="pass", ax=ax)
-    ax.axhline(0, color="black", linewidth=0.8)
+    sns.barplot(long, x="model", y="r2", hue="pass", palette=theme.PASS_COLORS, ax=ax)
+    ax.axhline(0, color=theme.INK, linewidth=0.8)
     ax.set_title(f"Frozen vs finetune r² — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
     return _save(fig, out_dir, "r2_frozen_vs_finetune")
@@ -97,18 +102,21 @@ def plot_proxy_scatter(triple: Triple, out_dir: str | Path) -> Path:
         x, y = float(fz[m]), float(ft[m])
         lo, hi = min(lo, x, y), max(hi, x, y)
         if triple.finetune_skipped.get(m):
-            color, marker = "tab:gray", "s"
+            color = theme.STATUS_COLORS["skipped"]
+            marker = theme.STATUS_MARKERS["skipped"]
         elif triple.diverged.get(m):
-            color, marker = "tab:red", "X"
+            color = theme.STATUS_COLORS["diverged"]
+            marker = theme.STATUS_MARKERS["diverged"]
         else:
-            color, marker = "tab:blue", "o"
+            color = theme.STATUS_COLORS["ok"]
+            marker = theme.STATUS_MARKERS["ok"]
         ax.scatter(x, y, c=color, marker=marker, s=60, zorder=3)
         ax.annotate(m, (x, y), fontsize=7, xytext=(3, 3), textcoords="offset points")
     pad = 0.05 * (hi - lo or 1)
-    ax.plot([lo - pad, hi + pad], [lo - pad, hi + pad], "--", color="gray", label="y = x")
+    ax.plot([lo - pad, hi + pad], [lo - pad, hi + pad], "--", color=theme.GRID, label="y = x")
     ax.set_xlabel("frozen r² (cheap proxy)")
     ax.set_ylabel("finetune r² (ground truth)")
-    ax.set_title(f"Proxy quality — head {triple.head}\nblue=ok  red=diverged  gray=skipped")
+    ax.set_title(f"Proxy quality — head {triple.head}\nslate=ok  brick-red=diverged  grey=skipped")
     ax.legend()
     return _save(fig, out_dir, "proxy_scatter")
 
@@ -126,10 +134,12 @@ def plot_r2_delta(triple: Triple, out_dir: str | Path) -> Path:
         if m in ft.index
     ]
     df = pd.DataFrame(deltas).sort_values("delta_r2")
-    colors = ["tab:red" if d < 0 else "tab:green" for d in df["delta_r2"]]
+    colors = [
+        theme.DELTA_COLORS["neg"] if d < 0 else theme.DELTA_COLORS["pos"] for d in df["delta_r2"]
+    ]
     fig, ax = plt.subplots(figsize=(max(8, len(df)), 5))
     ax.bar(df["model"], df["delta_r2"], color=colors)
-    ax.axhline(0, color="black", linewidth=0.8)
+    ax.axhline(0, color=theme.INK, linewidth=0.8)
     ax.set_ylabel("Δ r² (finetune - frozen)")
     ax.set_title(f"Finetune lift over frozen — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
@@ -141,10 +151,23 @@ def plot_regret_curve(triple: Triple, out_dir: str | Path) -> Path:
     plt, _ = _setup()
     df = _regret_df(triple)
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(df["budget"], df["regret"], marker="o", label="regret")
-    ax.plot(df["budget"], df["normalized_regret"], marker="s", linestyle="--", label="normalized")
+    ax.plot(
+        df["budget"],
+        df["regret"],
+        marker=theme.PASS_MARKERS["frozen"],
+        color=theme.PASS_COLORS["frozen"],
+        label="regret",
+    )
+    ax.plot(
+        df["budget"],
+        df["normalized_regret"],
+        marker=theme.PASS_MARKERS["finetune"],
+        linestyle="--",
+        color=theme.PASS_COLORS["finetune"],
+        label="normalized",
+    )
     b0 = budget_to_zero(df)
-    ax.axvline(b0, color="gray", linestyle=":", label=f"budget-to-zero = {b0}")
+    ax.axvline(b0, color=theme.GRID, linestyle=":", label=f"budget-to-zero = {b0}")
     ax.set_xlabel("budget B (top-B of frozen-r² ranking)")
     ax.set_ylabel("regret (r²)")
     ax.set_title(f"Regret vs budget — head {triple.head}")
@@ -161,17 +184,22 @@ def plot_finetune_spearman_vs_r2(triple: Triple, out_dir: str | Path) -> Path:
     ft = triple.finetune
     fig, ax = plt.subplots(figsize=(7, 6))
     for model, r2, spearman in zip(ft["model"], ft["r2"], ft["spearman"], strict=True):
-        color = "tab:red" if triple.diverged.get(str(model), False) else "tab:blue"
-        ax.scatter(r2, spearman, c=color, s=60, zorder=3)
+        if triple.diverged.get(str(model), False):
+            color = theme.STATUS_COLORS["diverged"]
+            marker = theme.STATUS_MARKERS["diverged"]
+        else:
+            color = theme.STATUS_COLORS["ok"]
+            marker = theme.STATUS_MARKERS["ok"]
+        ax.scatter(r2, spearman, c=color, marker=marker, s=60, zorder=3)
         ax.annotate(
             str(model), (r2, spearman), fontsize=7, xytext=(3, 3), textcoords="offset points"
         )
-    ax.axvline(0, color="gray", linestyle="--", label="r² = 0 (scale broken left of here)")
+    ax.axvline(0, color=theme.GRID, linestyle="--", label="r² = 0 (scale broken left of here)")
     ax.set_xlabel("finetune r²")
     ax.set_ylabel("finetune Spearman")
     ax.set_title(
         f"Rank preserved vs scale broken — head {triple.head}\n"
-        "diverged models (red) keep high Spearman despite negative r²"
+        "diverged models (brick-red) keep high Spearman despite negative r²"
     )
     ax.legend()
     return _save(fig, out_dir, "finetune_spearman_vs_r2")
@@ -188,25 +216,26 @@ def plot_timing_stacked(triple: Triple, out_dir: str | Path) -> Path:
     """
     import numpy as np
 
+    from mlsys.analysis.theme import SUBSTEP_COLORS, SUBSTEP_HATCHES, SUBSTEP_KEYS
+
     plt, _ = _setup()
-    keys = ["prepare_model_s", "prepare_data_s", "inference_s", "train_head_s", "eval_s"]
     fz = triple.frozen.set_index("model")
     ft = triple.finetune.set_index("model")
     models = triple.models
     x = np.arange(len(models))
     width = 0.4
     fig, ax = plt.subplots(figsize=(max(9, len(models) * 1.1), 5.5))
-    cmap = plt.get_cmap("tab10")
     for offset, frame, label in ((-width / 2, fz, "frozen"), (width / 2, ft, "finetune")):
         bottom = np.zeros(len(models))
-        for ki, key in enumerate(keys):
+        for ki, key in enumerate(SUBSTEP_KEYS):
             vals = np.array([float(frame.loc[m, key]) if m in frame.index else 0.0 for m in models])
             ax.bar(
                 x + offset,
                 vals,
                 width,
                 bottom=bottom,
-                color=cmap(ki),
+                color=SUBSTEP_COLORS[ki],
+                hatch=SUBSTEP_HATCHES[ki],
                 label=f"{key}" if label == "frozen" else None,
             )
             bottom += vals
@@ -234,7 +263,7 @@ def plot_peak_gpu_mem(triple: Triple, out_dir: str | Path) -> Path:
         ]
     )
     fig, ax = plt.subplots(figsize=(max(8, len(triple.models)), 5))
-    sns.barplot(long, x="model", y="peak_gpu_mem_mb", hue="pass", ax=ax)
+    sns.barplot(long, x="model", y="peak_gpu_mem_mb", hue="pass", palette=theme.PASS_COLORS, ax=ax)
     ax.set_title(f"Peak GPU memory frozen vs finetune — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
     return _save(fig, out_dir, "peak_gpu_mem")
@@ -247,14 +276,31 @@ def plot_frozen_time_breakdown(triple: Triple, out_dir: str | Path) -> Path:
     """
     import numpy as np
 
+    from mlsys.analysis.theme import SUBSTEP_COLORS, SUBSTEP_HATCHES, SUBSTEP_KEYS
+
     plt, _ = _setup()
     fz = triple.frozen.set_index("model")
     models = triple.models
+    inf_idx = SUBSTEP_KEYS.index("inference_s")
+    head_idx = SUBSTEP_KEYS.index("train_head_s")
     inf = np.array([float(fz.loc[m, "inference_s"]) for m in models])
     head = np.array([float(fz.loc[m, "train_head_s"]) for m in models])
     fig, ax = plt.subplots(figsize=(max(8, len(models)), 5))
-    ax.bar(models, inf, label="inference_s (encode)", color="tab:purple")
-    ax.bar(models, head, bottom=inf, label="train_head_s (head fit)", color="tab:orange")
+    ax.bar(
+        models,
+        inf,
+        label="inference_s (encode)",
+        color=SUBSTEP_COLORS[inf_idx],
+        hatch=SUBSTEP_HATCHES[inf_idx],
+    )
+    ax.bar(
+        models,
+        head,
+        bottom=inf,
+        label="train_head_s (head fit)",
+        color=SUBSTEP_COLORS[head_idx],
+        hatch=SUBSTEP_HATCHES[head_idx],
+    )
     ax.set_ylabel("seconds")
     ax.set_title(f"Frozen pass: where the time goes — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
@@ -290,11 +336,23 @@ def plot_regret_at1_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
         auc.append(float(df["regret"].mean()))
         b0.append(budget_to_zero(df))
     fig, ax1 = plt.subplots(figsize=(8, 5))
-    ax1.plot(heads, at1, marker="o", color="tab:blue", label="regret@1")
-    ax1.plot(heads, auc, marker="s", color="tab:green", label="mean regret (AUC)")
+    ax1.plot(
+        heads,
+        at1,
+        marker=theme.PASS_MARKERS["frozen"],
+        color=theme.PASS_COLORS["frozen"],
+        label="regret@1",
+    )
+    ax1.plot(
+        heads,
+        auc,
+        marker=theme.PASS_MARKERS["finetune"],
+        color=theme.PASS_COLORS["finetune"],
+        label="mean regret (AUC)",
+    )
     ax1.set_ylabel("regret (r²)")
     ax2 = ax1.twinx()
-    ax2.plot(heads, b0, marker="^", color="tab:red", label="budget-to-zero")
+    ax2.plot(heads, b0, marker="^", color=theme.STATUS_COLORS["diverged"], label="budget-to-zero")
     ax2.set_ylabel("budget-to-zero")
     ax1.set_title("Proxy shortlist quality vs head width")
     lines = ax1.get_lines() + ax2.get_lines()
@@ -309,8 +367,20 @@ def plot_best_r2_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
     best_fz = [float(t.frozen["r2"].max()) for t in triples]
     best_ft = [float(t.finetune["r2"].max()) for t in triples]
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(heads, best_fz, marker="o", label="best frozen r²")
-    ax.plot(heads, best_ft, marker="s", label="best finetune r²")
+    ax.plot(
+        heads,
+        best_fz,
+        marker=theme.PASS_MARKERS["frozen"],
+        color=theme.PASS_COLORS["frozen"],
+        label="best frozen r²",
+    )
+    ax.plot(
+        heads,
+        best_ft,
+        marker=theme.PASS_MARKERS["finetune"],
+        color=theme.PASS_COLORS["finetune"],
+        label="best finetune r²",
+    )
     ax.set_ylabel("r²")
     ax.set_title("Best achievable r² vs head width")
     ax.legend()
@@ -327,7 +397,9 @@ def _heatmap(triples: list[Triple], kind: str, out_dir: str | Path, slug: str, t
         series[t.head] = frame.set_index("model")["r2"]
     matrix = pd.DataFrame(series)
     fig, ax = plt.subplots(figsize=(max(6, len(triples) * 1.5), max(6, len(matrix) * 0.5)))
-    sns.heatmap(matrix, annot=True, fmt=".2f", cmap="viridis", ax=ax, cbar_kws={"label": "r²"})
+    sns.heatmap(
+        matrix, annot=True, fmt=".2f", cmap=theme.get_cmap_r2(), ax=ax, cbar_kws={"label": "r²"}
+    )
     ax.set_title(title)
     return _save(fig, out_dir, slug)
 
@@ -358,12 +430,12 @@ def plot_divergence_map(triples: list[Triple], out_dir: str | Path) -> Path:
         matrix,
         annot=True,
         fmt=".0f",
-        cmap=sns.color_palette(["#2ca02c", "#d62728"]),
+        cmap=theme.get_binary_cmap(),
         cbar=False,
         ax=ax,
         linewidths=0.5,
     )
-    ax.set_title("Divergence map — 1 = finetune r² < 0 (red)")
+    ax.set_title("Divergence map — 1 = finetune r² < 0 (brick-red)")
     return _save(fig, out_dir, "divergence_map")
 
 
@@ -376,7 +448,7 @@ def plot_proxy_rank_spearman_vs_head(triples: list[Triple], out_dir: str | Path)
     heads = [t.head for t in triples]
     rhos = [rank_spearman(t) for t in triples]
     fig, ax = plt.subplots(figsize=(8, 5))
-    sns.barplot(x=heads, y=rhos, ax=ax, color="tab:blue")
+    sns.barplot(x=heads, y=rhos, ax=ax, color=theme.PASS_COLORS["frozen"])
     ax.set_ylim(0, 1)
     ax.set_ylabel("Spearman(frozen rank, finetune rank)")
     ax.set_title("Proxy rank fidelity vs head width")
@@ -392,12 +464,197 @@ def plot_cost_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
     mean_head_s = [float(t.finetune["train_head_s"].mean()) for t in triples]
     mean_mem = [float(t.finetune["peak_gpu_mem_mb"].mean()) for t in triples]
     fig, ax1 = plt.subplots(figsize=(8, 5))
-    ax1.plot(heads, mean_head_s, marker="o", color="tab:orange", label="mean finetune train_head_s")
+    ax1.plot(
+        heads,
+        mean_head_s,
+        marker=theme.PASS_MARKERS["finetune"],
+        color=theme.PASS_COLORS["finetune"],
+        label="mean finetune train_head_s",
+    )
     ax1.set_ylabel("mean train_head_s")
     ax2 = ax1.twinx()
-    ax2.plot(heads, mean_mem, marker="s", color="tab:purple", label="mean peak_gpu_mem_mb")
+    ax2.plot(
+        heads,
+        mean_mem,
+        marker=theme.PASS_MARKERS["frozen"],
+        color=theme.PASS_COLORS["frozen"],
+        label="mean peak_gpu_mem_mb",
+    )
     ax2.set_ylabel("mean peak_gpu_mem_mb")
     ax1.set_title("Finetune cost vs head width")
     lines = ax1.get_lines() + ax2.get_lines()
     ax1.legend(lines, [ln.get_label() for ln in lines], loc="best")
     return _save(fig, out_dir, "cost_vs_head")
+
+
+# ----------------------------------------------------------- new deck-slide plots (#3-#6)
+
+
+def plot_epochs_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
+    """(#3) Grouped bar: mean frozen vs finetune epochs per head; annotate frozen cap.
+
+    → ``epochs_vs_head.png``. Shows where early-stopping kicks in (frozen) vs where the
+    full budget is consumed (finetune).
+    """
+    from mlsys.analysis.tables import epochs_table
+
+    plt, _ = _setup()
+    et = epochs_table(triples)
+    if et.empty:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.text(
+            0.5, 0.5, "epochs_run not available", ha="center", va="center", transform=ax.transAxes
+        )
+        return _save(fig, out_dir, "epochs_vs_head")
+
+    heads = et["head"].tolist()
+    x = range(len(heads))
+    mean_fz = et["mean_frozen_epochs"].tolist()
+    mean_ft = et["mean_finetune_epochs"].tolist()
+    cap = et["frozen_cap"].iloc[0] if "frozen_cap" in et.columns else None
+
+    fig, ax = plt.subplots(figsize=(max(6, len(heads) * 1.5), 5))
+    width = 0.35
+    ax.bar(
+        [i - width / 2 for i in x],
+        mean_fz,
+        width,
+        label="mean frozen epochs",
+        color=theme.PASS_COLORS["frozen"],
+    )
+    ax.bar(
+        [i + width / 2 for i in x],
+        mean_ft,
+        width,
+        label="mean finetune epochs",
+        color=theme.PASS_COLORS["finetune"],
+    )
+    if cap is not None and not (isinstance(cap, float) and cap != cap):
+        ax.axhline(
+            cap,
+            color=theme.STATUS_COLORS["diverged"],
+            linestyle="--",
+            label=f"frozen cap = {int(cap)}",
+        )
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(heads)
+    ax.set_ylabel("mean epochs")
+    ax.set_title("Early-stopping epochs: frozen vs finetune per head")
+    ax.legend()
+    return _save(fig, out_dir, "epochs_vs_head")
+
+
+def plot_head_rank_agreement(triples: list[Triple], out_dir: str | Path) -> Path:
+    """(#4) Heatmap of the head x head Spearman rho matrix over frozen r2.
+
+    -> ``head_rank_agreement.png``. Low off-diagonal rho means head choice changes the proxy
+    ranking substantially.
+    """
+    from mlsys.analysis.tables import head_rank_agreement_matrix
+
+    plt, sns = _setup()
+    df = head_rank_agreement_matrix(triples)
+    matrix = df.set_index("head") if "head" in df.columns else df
+
+    fig, ax = plt.subplots(figsize=(max(4, len(matrix) * 1.5), max(4, len(matrix) * 1.2)))
+    sns.heatmap(
+        matrix,
+        annot=True,
+        fmt=".2f",
+        cmap=theme.get_cmap_r2(),
+        vmin=0,
+        vmax=1,
+        ax=ax,
+        cbar_kws={"label": "Spearman rho"},
+    )
+    ax.set_title("Head x head proxy-rank agreement (Spearman rho over frozen r2)")
+    return _save(fig, out_dir, "head_rank_agreement")
+
+
+def plot_frozen_timing_share(triples: list[Triple], out_dir: str | Path) -> Path:
+    """(#5) Horizontal 100%-stacked bar: frozen timing substep % share per head.
+
+    -> ``frozen_timing_share.png``. The deck's exact viz -- shows inference dominates 58-65%.
+    """
+    from mlsys.analysis.tables import frozen_timing_share_table
+    from mlsys.analysis.theme import SUBSTEP_COLORS, SUBSTEP_HATCHES
+
+    plt, _ = _setup()
+    ft_table = frozen_timing_share_table(triples)
+    if ft_table.empty:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.text(0.5, 0.5, "no timing data", ha="center", va="center", transform=ax.transAxes)
+        return _save(fig, out_dir, "frozen_timing_share")
+
+    pct_cols = [
+        "prepare_model_pct",
+        "prepare_data_pct",
+        "inference_pct",
+        "train_head_pct",
+        "eval_pct",
+    ]
+    labels = ["prepare_model_s", "prepare_data_s", "inference_s", "train_head_s", "eval_s"]
+    heads = ft_table["head"].tolist()
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(max(7, len(heads) * 2), 4))
+    left = np.zeros(len(heads))
+    for i, (col, label) in enumerate(zip(pct_cols, labels, strict=True)):
+        vals = ft_table[col].to_numpy(dtype=float)
+        ax.barh(
+            heads,
+            vals,
+            left=left,
+            color=SUBSTEP_COLORS[i],
+            hatch=SUBSTEP_HATCHES[i],
+            label=label,
+        )
+        for j, (v, offset) in enumerate(zip(vals, left, strict=True)):
+            if v > 4:
+                ax.text(offset + v / 2, j, f"{v:.0f}%", ha="center", va="center", fontsize=8)
+        left += vals
+    ax.set_xlim(0, 100)
+    ax.set_xlabel("% of total frozen wall-time")
+    ax.set_title("Frozen timing substep share per head")
+    ax.legend(loc="lower right", fontsize=8)
+    return _save(fig, out_dir, "frozen_timing_share")
+
+
+def plot_value_frontier(triples: list[Triple], out_dir: str | Path) -> Path:
+    """(#6) Scatter: frozen inference_s (x) vs frozen r² (y) at the widest head.
+
+    → ``value_frontier.png``. Models annotated with their name. Shows the inference-cost vs
+    quality trade-off for the backbone pool. Uses the widest head — inference_s is
+    backbone-bound (head-independent) and the widest head gives the best r² cut.
+    """
+    from mlsys.analysis.tables import value_frontier_table
+
+    plt, _ = _setup()
+    vf = value_frontier_table(triples)
+    if vf.empty:
+        fig, ax = plt.subplots(figsize=(6, 5))
+        ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes)
+        return _save(fig, out_dir, "value_frontier")
+
+    widest_head = triples[-1].head if triples else "widest"
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(
+        vf["frozen_inference_s"],
+        vf["frozen_r2"],
+        color=theme.PASS_COLORS["frozen"],
+        marker=theme.PASS_MARKERS["frozen"],
+        s=70,
+        zorder=3,
+    )
+    for _, row in vf.iterrows():
+        ax.annotate(
+            str(row["model"]),
+            (row["frozen_inference_s"], row["frozen_r2"]),
+            fontsize=7,
+            xytext=(4, 4),
+            textcoords="offset points",
+        )
+    ax.set_xlabel("frozen inference_s (backbone encode cost, head-independent)")
+    ax.set_ylabel("frozen r²")
+    ax.set_title(f"Inference value-frontier — widest head ({widest_head})")
+    return _save(fig, out_dir, "value_frontier")

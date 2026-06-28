@@ -69,6 +69,16 @@ python -m mlsys search --dataset wine_reviews                # linear head (defa
 
 `--wandb` needs `WANDB_API_KEY`. For local runs, copy `.env.example` to `.env` and fill it in — `python -m mlsys` auto-loads `.env` via `python-dotenv`. `.env` is gitignored; never commit a real key. On the cluster the key is read from the exported shell env instead (see [Running on the cluster](#running-on-the-cluster)).
 
+**Run name.** The W&B run is named with a self-describing scheme so a run is identifiable at a glance and maps onto its result CSVs:
+
+```
+<runid>_<dataset>_<strategy>_<num>_model_<HEAD>[_<width>]
+# e.g. 2296342_wine_reviews_fulleval_16_model_MLP_512   (MLP, hidden width 512)
+#      2296342_wine_reviews_frozen_16_model_FCH          (linear probe — bare FCH, no width)
+```
+
+`<runid>` is the `--output-dir` name (the SLURM job id on the cluster), `<num>` is the model-pool size, `<strategy>` is underscore-stripped (`full_eval` → `fulleval`), and the head is `FCH` (linear) or `MLP_<width>`. This is **the same string the analysis loader parses** — download a run's CSV from W&B, append `_frozen` / `_finetune` / `_regret`, and drop it into the experiment folder (see [analysis.md](analysis.md#filename-grammar-how-head-labels-are-recovered)).
+
 ## Adding a new model
 
 - Append one row to `config/models.yaml` with `name`, `hf_repo`, `loader`, `pooling`, `embedding_dim`, `max_length` (optional `input_prefix`).
@@ -101,6 +111,8 @@ Turn a `full_eval` run's CSVs into tables, plots, and a single `SUMMARY.md` to h
 python -m mlsys analyze results/<experiment>                 # → results/<experiment>/analysis/SUMMARY.md
 python -m mlsys regret --frozen F.csv --finetune T.csv       # standalone regret recompute (crash recovery)
 ```
+
+Gather a run's CSVs into one folder per experiment. Each file keeps its **W&B run name** as the stem plus a `_frozen` / `_finetune` / `_regret` suffix — e.g. download `2296342_wine_reviews_fulleval_16_model_MLP_512` from W&B, save it as `..._MLP_512_frozen.csv`, and drop it in. `analyze` recovers head/width/dataset from that name, so the naming matters — see the [filename grammar](analysis.md#filename-grammar-how-head-labels-are-recovered).
 
 Full plot/table catalog, the folder/filename conventions, and the crash-recovery recipe are in **[analysis.md](analysis.md)**.
 

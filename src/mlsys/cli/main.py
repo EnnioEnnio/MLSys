@@ -234,6 +234,21 @@ def _run_regret(args: argparse.Namespace) -> int:
     return 0
 
 
+def _wandb_run_name(
+    run_id: str, dataset: str, strategy: str, num_models: int, hidden: int | None
+) -> str:
+    """Descriptive W&B run name mirroring the analysis filename grammar.
+
+    ``<runid>_<dataset>_<strategy>_<num>_model_<HEAD>[_<width>]`` — e.g.
+    ``2296342_wine_reviews_fulleval_16_model_MLP_512``. A linear probe stays bare
+    (``..._model_FCH``, no width); an MLP carries its hidden width (``MLP_512``).
+    The strategy's underscore is stripped (``full_eval`` -> ``fulleval``) so the
+    token count is stable.
+    """
+    head = f"MLP_{hidden}" if hidden and hidden > 0 else "FCH"
+    return f"{run_id}_{dataset}_{strategy.replace('_', '')}_{num_models}_model_{head}"
+
+
 def _run_search(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir) if args.output_dir else Path(f"runs/{int(time.time())}")
     device = args.device or _default_device()
@@ -267,10 +282,13 @@ def _run_search(args: argparse.Namespace) -> int:
     if args.wandb:
         import wandb  # type: ignore[import-not-found]
 
+        num_models = len(model_names) if model_names else len(load_model_specs())
         wandb_run = wandb.init(
             entity="HPI_MLSys",
             project="mlsys-model-search",
-            name=output_dir.name,
+            name=_wandb_run_name(
+                output_dir.name, args.dataset, args.strategy, num_models, head_cfg.hidden
+            ),
             config={
                 "dataset": args.dataset,
                 "strategy": args.strategy,

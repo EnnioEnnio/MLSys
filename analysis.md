@@ -23,11 +23,11 @@ One **experiment** = one `full_eval` sweep over a model pool at several head wid
 CSVs in a single folder and run `analyze` on that folder:
 
 ```
-results/exp_wine_16/                         # the input CSVs (12 for a 4-head sweep)
-    2296332_fulleval_16_model_FCH_frozen.csv
-    2296332_fulleval_16_model_FCH_finetune.csv
-    2296332_fulleval_16_model_FCH_regret.csv
-    2296333_fulleval_16_model_MLP_128_frozen.csv
+results/exp_wine_16/                                       # the input CSVs (12 for a 4-head sweep)
+    2296332_wine_reviews_fulleval_16_model_FCH_frozen.csv
+    2296332_wine_reviews_fulleval_16_model_FCH_finetune.csv
+    2296332_wine_reviews_fulleval_16_model_FCH_regret.csv
+    2296333_wine_reviews_fulleval_16_model_MLP_128_frozen.csv
     ...
 results/exp_wine_16/analysis/                # generated (default --out-dir)
     SUMMARY.md                               # tables + embedded plots, in fixed section order
@@ -41,12 +41,21 @@ only uses it as the `SUMMARY.md` title. Name experiments however you like.
 ### Filename grammar (how head labels are recovered)
 
 ```
-<runid>_<strategy>_<num>_model_<HEAD>_<kind>.csv
+<runid>_<dataset>_<strategy>_<num>_model_<HEAD>_<kind>.csv
 ```
 
+The stem up to `_<kind>` is **exactly the W&B run name** the pipeline sets (see
+`_wandb_run_name` in `src/mlsys/cli/main.py`, documented in the README). So the workflow is:
+download a run's results CSV from W&B, append `_frozen` / `_finetune` / `_regret`, and drop it
+into the experiment folder — no manual renaming.
+
+- `<runid>` is the cluster/job id (W&B run name prefix); `<dataset>` may itself contain
+  underscores (e.g. `wine_reviews`) and round-trips fine.
+- `<strategy>` is the underscore-stripped strategy (`full_eval` → `fulleval`); `<num>` is the
+  model-pool size.
 - `<kind>` is the last token: `frozen`, `finetune`, or `regret`.
-- `<HEAD>` is every token between the literal `model` and `<kind>` — so both `FCH` and
-  `MLP_512` round-trip.
+- `<HEAD>` is every token between the literal `model` and `<kind>` — so both `FCH` (linear,
+  bare) and `MLP_512` round-trip.
 - Files are grouped into a **triple** by `<runid>` (one head config per run-id).
 
 The CSV's own `head_type` column is only `linear`/`mlp` and does **not** encode MLP width —
@@ -80,9 +89,9 @@ Standalone regret-curve recompute — the "finetune crashed, recover regret with
 
 ```bash
 mlsys regret \
-  --frozen   results/exp_wine_16/2296332_fulleval_16_model_FCH_frozen.csv \
-  --finetune results/exp_wine_16/2296332_fulleval_16_model_FCH_finetune.csv \
-  --out      results/exp_wine_16/2296332_fulleval_16_model_FCH_regret.csv
+  --frozen   results/exp_wine_16/2296332_wine_reviews_fulleval_16_model_FCH_frozen.csv \
+  --finetune results/exp_wine_16/2296332_wine_reviews_fulleval_16_model_FCH_finetune.csv \
+  --out      results/exp_wine_16/2296332_wine_reviews_fulleval_16_model_FCH_regret.csv
 ```
 
 The recomputed curve is byte-identical to what `full_eval` would have written: it reuses

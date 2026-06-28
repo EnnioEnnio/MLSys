@@ -3,11 +3,14 @@
 An **experiment** is a folder of CSVs, one ``full_eval`` head config per run-id, each
 contributing up to three ``kind`` files:
 
-    <runid>_<strategy>_<num>_model_<HEAD>_<kind>.csv
+    <runid>_<dataset>_<strategy>_<num>_model_<HEAD>_<kind>.csv
 
-e.g. ``2296342_fulleval_16_model_MLP_512_frozen.csv`` → run-id ``2296342``, head
-``MLP_512``, kind ``frozen``. The head label is *only* recoverable from the filename — the
-CSV ``head_type`` column is just ``linear``/``mlp`` and does **not** encode MLP width.
+e.g. ``2296342_wine_reviews_fulleval_16_model_MLP_512_frozen.csv`` → run-id ``2296342``,
+dataset ``wine_reviews``, head ``MLP_512``, kind ``frozen``. The stem (everything before
+``_<kind>``) is exactly the W&B run name emitted by ``mlsys.cli.main._wandb_run_name`` — you
+download a run's CSV, append ``_<kind>``, and drop it in. The head label is *only* recoverable
+from the filename — the CSV ``head_type`` column is just ``linear``/``mlp`` and does **not**
+encode MLP width.
 
 Grouping is by **run-id**: the three (frozen / finetune / regret) files that share a run-id
 form one :class:`Triple`. ``*_regret.csv`` may be missing (recomputed downstream); the
@@ -30,7 +33,8 @@ log = logging.getLogger(__name__)
 
 KINDS = ("frozen", "finetune", "regret")
 
-_FILENAME_GRAMMAR = "<runid>_<strategy>_<num>_model_<HEAD>_<kind>.csv"
+_FILENAME_GRAMMAR = "<runid>_<dataset>_<strategy>_<num>_model_<HEAD>_<kind>.csv"
+_EXAMPLE_NAME = "2296342_wine_reviews_fulleval_16_model_MLP_512_frozen.csv"
 
 
 @dataclass(frozen=True)
@@ -38,6 +42,7 @@ class ParsedName:
     """The fields lifted out of a result filename (see :data:`_FILENAME_GRAMMAR`)."""
 
     run_id: str
+    dataset: str
     strategy: str
     num: str
     head: str
@@ -47,35 +52,38 @@ class ParsedName:
 def parse_filename(path: str | Path) -> ParsedName:
     """Parse one result filename. Raises ``ValueError`` naming the grammar on a mismatch.
 
-    The head label is every token between the literal ``model`` marker and the trailing
-    ``kind`` token, re-joined with ``_`` — so both ``FCH`` and ``MLP_512`` round-trip.
+    The literal ``model`` token is the anchor: ``strategy`` and ``num`` are the two tokens
+    immediately before it, ``dataset`` is everything between the run-id and the strategy
+    (so a multi-token dataset like ``wine_reviews`` round-trips), and the head label is every
+    token between ``model`` and the trailing ``kind`` (so both ``FCH`` and ``MLP_512`` work).
     """
     stem = Path(path).stem
     tokens = stem.split("_")
-    # Need at least: runid, strategy, num, "model", <head>, kind  → 6 tokens.
-    if len(tokens) < 6 or "model" not in tokens:
+    if "model" not in tokens:
         raise ValueError(
             f"filename {Path(path).name!r} does not match the expected grammar "
-            f"{_FILENAME_GRAMMAR!r} (e.g. 2296342_fulleval_16_model_MLP_512_frozen.csv)"
+            f"{_FILENAME_GRAMMAR!r} (e.g. {_EXAMPLE_NAME})"
         )
     model_idx = tokens.index("model")
+    # Before "model": runid (1) + dataset (>=1) + strategy (1) + num (1)  → model_idx >= 4.
+    # After  "model": head (>=1) + kind (1)                               → >= 2 more tokens.
+    if model_idx < 4 or len(tokens) < model_idx + 3:
+        raise ValueError(
+            f"filename {Path(path).name!r} does not match the expected grammar "
+            f"{_FILENAME_GRAMMAR!r} (e.g. {_EXAMPLE_NAME})"
+        )
     kind = tokens[-1]
     if kind not in KINDS:
         raise ValueError(
             f"filename {Path(path).name!r} ends in kind {kind!r}; expected one of {KINDS} "
             f"per the grammar {_FILENAME_GRAMMAR!r}"
         )
-    head_tokens = tokens[model_idx + 1 : -1]
-    if not head_tokens:
-        raise ValueError(
-            f"filename {Path(path).name!r} has no head label between 'model' and {kind!r}; "
-            f"expected the grammar {_FILENAME_GRAMMAR!r}"
-        )
     return ParsedName(
         run_id=tokens[0],
-        strategy=tokens[1],
-        num="_".join(tokens[2:model_idx]),
-        head="_".join(head_tokens),
+        dataset="_".join(tokens[1 : model_idx - 2]),
+        strategy=tokens[model_idx - 2],
+        num=tokens[model_idx - 1],
+        head="_".join(tokens[model_idx + 1 : -1]),
         kind=kind,
     )
 

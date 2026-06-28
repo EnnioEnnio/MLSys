@@ -10,6 +10,24 @@ import pytest
 from mlsys.cli import main
 
 
+@pytest.mark.parametrize(
+    "hidden,strategy,expected",
+    [
+        (512, "full_eval", "2296342_wine_reviews_fulleval_16_model_MLP_512"),
+        (None, "full_eval", "2296342_wine_reviews_fulleval_16_model_FCH"),
+        (0, "frozen", "2296342_wine_reviews_frozen_16_model_FCH"),
+        (128, "finetune", "2296342_wine_reviews_finetune_16_model_MLP_128"),
+    ],
+)
+def test_wandb_run_name_grammar(hidden, strategy, expected) -> None:
+    # `main` is the entrypoint function; reach the submodule via sys.modules to call
+    # its module-level helper (same name-clash as test_strategy_routes_to_run_strategy).
+    import sys
+
+    cli_main = sys.modules["mlsys.cli.main"]
+    assert cli_main._wandb_run_name("2296342", "wine_reviews", strategy, 16, hidden) == expected
+
+
 def test_list_models_prints_seed_pool(capsys) -> None:
     rc = main(["list-models"])
     assert rc == 0

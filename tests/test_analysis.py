@@ -166,29 +166,37 @@ def _write_triple(
         for r in rows:
             r["head_type"] = head_type
         df = pd.DataFrame(rows, columns=_COLS)
-        df.to_csv(folder / f"{run_id}_fulleval_4_model_{head}_{kind}.csv", index=False)
+        df.to_csv(folder / f"{run_id}_wine_reviews_fulleval_4_model_{head}_{kind}.csv", index=False)
     if with_regret:
         from mlsys.analysis.regret_recompute import recompute_regret
 
         rc = recompute_regret(pd.DataFrame(frozen), pd.DataFrame(finetune))
-        rc.to_csv(folder / f"{run_id}_fulleval_4_model_{head}_regret.csv", index=False)
+        rc.to_csv(folder / f"{run_id}_wine_reviews_fulleval_4_model_{head}_regret.csv", index=False)
 
 
 # ----------------------------------------------------------------- filename grammar
 
 
 def test_parse_filename_fch_and_mlp():
-    a = parse_filename("2296332_fulleval_16_model_FCH_frozen.csv")
-    assert (a.run_id, a.head, a.kind) == ("2296332", "FCH", "frozen")
-    b = parse_filename("2296342_fulleval_16_model_MLP_512_regret.csv")
-    assert (b.run_id, b.head, b.kind) == ("2296342", "MLP_512", "regret")
+    a = parse_filename("2296332_wine_reviews_fulleval_16_model_FCH_frozen.csv")
+    assert (a.run_id, a.dataset, a.head, a.kind) == ("2296332", "wine_reviews", "FCH", "frozen")
+    b = parse_filename("2296342_wine_reviews_fulleval_16_model_MLP_512_regret.csv")
+    assert (b.run_id, b.dataset, b.head, b.kind) == ("2296342", "wine_reviews", "MLP_512", "regret")
+
+
+def test_parse_filename_single_token_dataset():
+    p = parse_filename("42_wine_frozen_8_model_MLP_256_finetune.csv")
+    assert (p.run_id, p.dataset, p.strategy, p.num) == ("42", "wine", "frozen", "8")
 
 
 def test_parse_filename_rejects_bad_name():
     with pytest.raises(ValueError, match="grammar"):
         parse_filename("garbage.csv")
+    # no dataset token (runid, strategy, num, model, head) → fails the model_idx >= 4 guard.
+    with pytest.raises(ValueError, match="grammar"):
+        parse_filename("1_fulleval_4_model_FCH_frozen.csv")
     with pytest.raises(ValueError, match="kind"):
-        parse_filename("1_fulleval_4_model_FCH_unknownkind.csv")
+        parse_filename("1_wine_fulleval_4_model_FCH_unknownkind.csv")
 
 
 def test_head_sort_key_orders_by_capacity():
@@ -490,9 +498,9 @@ def test_cli_regret_smoke(tmp_path, capsys):
         [
             "regret",
             "--frozen",
-            str(tmp_path / "100_fulleval_4_model_MLP_128_frozen.csv"),
+            str(tmp_path / "100_wine_reviews_fulleval_4_model_MLP_128_frozen.csv"),
             "--finetune",
-            str(tmp_path / "100_fulleval_4_model_MLP_128_finetune.csv"),
+            str(tmp_path / "100_wine_reviews_fulleval_4_model_MLP_128_finetune.csv"),
             "--out",
             str(out),
         ]
@@ -520,7 +528,7 @@ def test_cli_analyze_smoke_and_crash_recovery(tmp_path):
     assert (out / "MLP_512" / "tables.csv").exists()
     assert (out / "comparison" / "per_head_summary.csv").exists()
     # The missing MLP_512 regret CSV was recomputed and written back into the folder.
-    assert (tmp_path / "200_fulleval_4_model_MLP_512_regret.csv").exists()
+    assert (tmp_path / "200_wine_reviews_fulleval_4_model_MLP_512_regret.csv").exists()
 
 
 def test_cli_analyze_cpu_run_zero_gpu_mem(tmp_path):

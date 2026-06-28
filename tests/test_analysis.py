@@ -36,7 +36,17 @@ _COLS = [
 ]
 
 
-def _row(model, r2, *, inference_s, train_head_s, epochs_run, strategy, spearman=0.8):
+def _row(
+    model,
+    r2,
+    *,
+    inference_s,
+    train_head_s,
+    epochs_run,
+    strategy,
+    spearman=0.8,
+    peak_gpu_mem_mb=1000.0,
+):
     return {
         "model": model,
         "dataset": "wine_reviews",
@@ -50,7 +60,7 @@ def _row(model, r2, *, inference_s, train_head_s, epochs_run, strategy, spearman
         "inference_s": inference_s,
         "train_head_s": train_head_s,
         "eval_s": 0.1,
-        "peak_gpu_mem_mb": 1000.0,
+        "peak_gpu_mem_mb": peak_gpu_mem_mb,
         "epochs_run": epochs_run,
         "embedding_dim": 384,
         "head_type": "mlp",
@@ -58,16 +68,57 @@ def _row(model, r2, *, inference_s, train_head_s, epochs_run, strategy, spearman
     }
 
 
-def _write_triple(folder: Path, run_id: str, head: str, *, with_regret: bool, head_type="mlp"):
+def _write_triple(
+    folder: Path,
+    run_id: str,
+    head: str,
+    *,
+    with_regret: bool,
+    head_type="mlp",
+    peak_gpu_mem_mb=1000.0,
+):
     """Write a frozen+finetune (+optional regret) CSV trio with the filename grammar."""
     import pandas as pd
 
+    mem = peak_gpu_mem_mb
     # 3 real backbones (inference_s==0 in finetune) + 1 model2vec fallback (inference_s>0).
     frozen = [
-        _row("alpha", 0.50, inference_s=10, train_head_s=5, epochs_run=20, strategy="frozen"),
-        _row("beta", 0.40, inference_s=10, train_head_s=5, epochs_run=20, strategy="frozen"),
-        _row("gamma", 0.30, inference_s=10, train_head_s=5, epochs_run=20, strategy="frozen"),
-        _row("m2v", 0.20, inference_s=2, train_head_s=5, epochs_run=20, strategy="frozen"),
+        _row(
+            "alpha",
+            0.50,
+            inference_s=10,
+            train_head_s=5,
+            epochs_run=20,
+            strategy="frozen",
+            peak_gpu_mem_mb=mem,
+        ),
+        _row(
+            "beta",
+            0.40,
+            inference_s=10,
+            train_head_s=5,
+            epochs_run=20,
+            strategy="frozen",
+            peak_gpu_mem_mb=mem,
+        ),
+        _row(
+            "gamma",
+            0.30,
+            inference_s=10,
+            train_head_s=5,
+            epochs_run=20,
+            strategy="frozen",
+            peak_gpu_mem_mb=mem,
+        ),
+        _row(
+            "m2v",
+            0.20,
+            inference_s=2,
+            train_head_s=5,
+            epochs_run=20,
+            strategy="frozen",
+            peak_gpu_mem_mb=mem,
+        ),
     ]
     finetune = [
         # alpha diverges (r2<0) but keeps high spearman.
@@ -79,12 +130,37 @@ def _write_triple(folder: Path, run_id: str, head: str, *, with_regret: bool, he
             epochs_run=3,
             strategy="finetune",
             spearman=0.9,
+            peak_gpu_mem_mb=mem,
         ),
-        _row("beta", 0.70, inference_s=0, train_head_s=50, epochs_run=3, strategy="finetune"),
-        _row("gamma", 0.60, inference_s=0, train_head_s=50, epochs_run=3, strategy="finetune"),
+        _row(
+            "beta",
+            0.70,
+            inference_s=0,
+            train_head_s=50,
+            epochs_run=3,
+            strategy="finetune",
+            peak_gpu_mem_mb=mem,
+        ),
+        _row(
+            "gamma",
+            0.60,
+            inference_s=0,
+            train_head_s=50,
+            epochs_run=3,
+            strategy="finetune",
+            peak_gpu_mem_mb=mem,
+        ),
         # m2v skipped: inference_s>0 + early-stop epochs != budget. Its negative "finetune" r²
         # is the reused frozen score, not a real divergence — must NOT be flagged diverged.
-        _row("m2v", -0.05, inference_s=2, train_head_s=5, epochs_run=20, strategy="finetune"),
+        _row(
+            "m2v",
+            -0.05,
+            inference_s=2,
+            train_head_s=5,
+            epochs_run=20,
+            strategy="finetune",
+            peak_gpu_mem_mb=mem,
+        ),
     ]
     for kind, rows in (("frozen", frozen), ("finetune", finetune)):
         for r in rows:
@@ -445,3 +521,21 @@ def test_cli_analyze_smoke_and_crash_recovery(tmp_path):
     assert (out / "comparison" / "per_head_summary.csv").exists()
     # The missing MLP_512 regret CSV was recomputed and written back into the folder.
     assert (tmp_path / "200_fulleval_4_model_MLP_512_regret.csv").exists()
+
+
+def test_cli_analyze_cpu_run_zero_gpu_mem(tmp_path):
+    """CPU-only runs record peak_gpu_mem_mb=0; the synthesis section must not ZeroDivide.
+
+    Regression: ``_synthesis_section`` divided finetune/frozen peak GPU memory unguarded, so a
+    zero-memory CPU run crashed *after* every table+plot was written, leaving the analysis
+    folder with no SUMMARY.md. The ratio must degrade to ``n/a`` instead.
+    """
+    pytest.importorskip("pandas")
+    pytest.importorskip("seaborn")
+    from mlsys.cli import main
+
+    _write_triple(tmp_path, "100", "FCH", with_regret=True, peak_gpu_mem_mb=0.0)
+    assert main(["analyze", str(tmp_path)]) == 0
+    summary = (tmp_path / "analysis" / "SUMMARY.md").read_text()
+    # The memory ratio falls back to n/a; the table/plot artifacts are still emitted.
+    assert "peak GPU mem ratio:** n/a" in summary

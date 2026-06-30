@@ -28,8 +28,8 @@ from mlsys.models.registry import ModelSpec, load_specs
 from mlsys.search.regret import regret_curve
 from mlsys.search.runner import (
     RunRecord,
-    _make_seeds,
     finetune_candidate,
+    make_seeds,
     release_gpu_memory,
     score_candidate,
 )
@@ -42,7 +42,13 @@ log = logging.getLogger(__name__)
 STRATEGIES = ("frozen", "finetune", "full_eval")
 
 # Wall-clock substep fields summed for the per-candidate "done in Ns" log line.
-_TIMING_KEYS = ("prepare_model_s", "prepare_data_s", "inference_s", "train_head_s", "eval_s")
+_TIMING_KEYS = (
+    "prepare_model_s",
+    "prepare_data_s",
+    "inference_s",
+    "train_head_s",
+    "eval_s",
+)
 
 
 def _resolve_models(model_names: Iterable[str] | None) -> list[ModelSpec]:
@@ -112,7 +118,7 @@ def run_frozen(
 ) -> list[RunRecord]:
     """Frozen-backbone pass: train an FC head on every candidate; append to results.jsonl."""
     specs = _resolve_models(model_names)
-    seeds = _make_seeds(head_repeats)
+    seeds = make_seeds(head_repeats)
     return _run_pass(
         specs,
         out_path=results_path(output_dir),

@@ -82,7 +82,7 @@ def _embed_split(
     return torch.cat(feats, dim=0), torch.tensor(targets, dtype=torch.float32, device=device)
 
 
-def _make_seeds(length: int) -> list[int]:
+def make_seeds(length: int) -> list[int]:
     return [int(torch.randint(0, 2**32 - 1, (1,)).item()) for _ in range(length)]
 
 
@@ -128,7 +128,7 @@ def score_candidate(
     head_config = head_config or HeadTrainConfig()
     reset_peak_gpu_memory()
     if seeds is None:
-        seeds = _make_seeds(head_repeats)
+        seeds = make_seeds(head_repeats)
     timer = Timer(label=f"frozen:{spec.name}")
 
     with timer.section("prepare_model_s"):
@@ -171,7 +171,7 @@ def score_candidate(
         extras={
             "embedding_dim": spec.embedding_dim,
             # Mirror FCHead's own linear/mlp decision (hidden None *or* <= 0 -> linear).
-            "head_type": "mlp" if head_config.hidden and head_config.hidden > 0 else "linear",
+            "head_type": ("mlp" if head_config.hidden and head_config.hidden > 0 else "linear"),
             "head_repeats": head_repeats,
         },
     )
@@ -203,6 +203,9 @@ def finetune_candidate(
     fine-tuned, so we fall back to the frozen :func:`score_candidate` score and tag the row
     with ``finetune_skipped=True`` (finetune score == frozen score for them).
     """
+    assert head_repeats == 1, (
+        "finetune runs once per model; increase head_repeats only after updating REGRET.md note 2"
+    )
     head_config = head_config or HeadTrainConfig()
     finetune_config = finetune_config or FinetuneConfig()
     reset_peak_gpu_memory()

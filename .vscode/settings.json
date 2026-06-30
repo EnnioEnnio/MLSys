@@ -1,0 +1,7 @@
+{
+  "ruff.path": ["${workspaceFolder}/.venv/bin/ruff"],
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true
+  }
+}

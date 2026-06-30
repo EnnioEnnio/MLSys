@@ -1,6 +1,6 @@
 # MLSys — Model search for regression tasks
 
-Seminar project at HPI. Take a regression dataset, build a candidate pool of HuggingFace encoders, attach a fresh fully-connected head to each frozen backbone, train the head against ground truth, rank candidates. v1 = full-evaluation baseline; v2 layers on successive halving + embedding caching.
+Seminar project at HPI. Take a regression dataset, build a candidate pool of HuggingFace encoders, attach a fresh fully-connected head to each backbone, train against ground truth, rank candidates. Three strategies share the same metrics: `frozen` (head on a frozen backbone — the cheap proxy ranking), `finetune` (unfreeze + train backbone+head jointly — the expensive ground truth), and `full_eval` (run both over the pool and report **regret** — how much quality the proxy ranking loses versus fine-tuning everything; see [REGRET.md](REGRET.md)). v2 layers on successive halving + embedding caching.
 
 ## Setup
 
@@ -29,7 +29,9 @@ src/mlsys/cli/        # python -m mlsys entrypoints
 src/mlsys/datasets/   # HF dataset loaders, template rendering
 src/mlsys/models/     # backbone adapters (transformers / sentence-transformers / model2vec)
 src/mlsys/head/       # FC regression head + trainer
-src/mlsys/search/     # search strategies (v1: full_eval), runner, timing, metrics
+src/mlsys/finetune/   # joint backbone+head fine-tune loop (finetune/full_eval strategies)
+src/mlsys/search/     # strategy dispatch (frozen/finetune/full_eval), runner, regret, timing, metrics
+src/mlsys/analysis/   # turn full_eval CSVs into tables + plots + SUMMARY.md (see analysis.md)
 src/mlsys/io/         # results.jsonl writer
 config/               # datasets.yaml + models.yaml
 slurm/                # cluster launch scripts
@@ -38,9 +40,21 @@ tests/                # CPU-only smoke + unit tests
 
 ## CLI
 
-- `python -m mlsys search` — run a search. Flags: `--dataset NAME`, `--models name1,name2` (optional, default all), `--strategy full_eval`, `--output-dir PATH` (default `runs/<unix-ts>`), `--epochs INT`, `--batch-size INT`, `--hidden WIDTH`, `--device cpu|cuda`, `--wandb`, `--cache-embeddings` (stubbed for v2).
+- `python -m mlsys search` — run a search. Flags: `--dataset NAME`, `--models name1,name2` (optional, default all), `--strategy {frozen,finetune,full_eval}` (default `frozen`), `--output-dir PATH` (default `runs/<unix-ts>`), `--epochs INT`, `--batch-size INT`, `--hidden WIDTH`, `--device cpu|cuda`, `--head-repeats N`, `--finetune-epochs INT`, `--finetune-lr FLOAT`, `--finetune-batch-size INT`, `--wandb`, `--cache-embeddings` (stubbed for v2).
 - `python -m mlsys list-models` — dumps `config/models.yaml` entries.
 - `python -m mlsys list-datasets` — dumps `config/datasets.yaml` entries.
+
+### Strategies (`--strategy`)
+
+- **`frozen`** (default) — train a fresh FC head on the **frozen** backbone; the cheap proxy / ranking signal.
+- **`finetune`** — unfreeze the backbone and train backbone+head jointly; the expensive ground truth `t(m, D)`. Inference is fused into the joint loop, so per-row timing reports `inference_s = 0` and the training cost in `train_head_s`. Static encoders that can't be fine-tuned (model2vec) fall back to the frozen score, tagged `finetune_skipped`.
+- **`full_eval`** — run both passes over the whole pool, then compute the regret-vs-budget curve (frozen r2 ranks the shortlist; finetune r2 scores it). Writes `runs/<id>/regret.json` (metric `r2`, per-budget absolute + normalized regret, the proxy ranking, and both r2 maps). Tune the joint loop with `--finetune-epochs` / `--finetune-lr` / `--finetune-batch-size`.
+
+```bash
+python -m mlsys search --dataset wine_reviews --strategy frozen        # proxy ranking only
+python -m mlsys search --dataset wine_reviews --strategy finetune       # ground-truth scores
+python -m mlsys search --dataset wine_reviews --strategy full_eval      # both + regret.json
+```
 
 ### Head type (`--hidden`)
 
@@ -54,6 +68,16 @@ python -m mlsys search --dataset wine_reviews                # linear head (defa
 ### W&B logging (`--wandb`)
 
 `--wandb` needs `WANDB_API_KEY`. For local runs, copy `.env.example` to `.env` and fill it in — `python -m mlsys` auto-loads `.env` via `python-dotenv`. `.env` is gitignored; never commit a real key. On the cluster the key is read from the exported shell env instead (see [Running on the cluster](#running-on-the-cluster)).
+
+**Run name.** The W&B run is named with a self-describing scheme so a run is identifiable at a glance and maps onto its result CSVs:
+
+```
+<runid>_<dataset>_<strategy>_<num>_model_<HEAD>[_<width>]
+# e.g. 2296342_wine_reviews_fulleval_16_model_MLP_512   (MLP, hidden width 512)
+#      2296342_wine_reviews_frozen_16_model_FCH          (linear probe — bare FCH, no width)
+```
+
+`<runid>` is the `--output-dir` name (the SLURM job id on the cluster), `<num>` is the model-pool size, `<strategy>` is underscore-stripped (`full_eval` → `fulleval`), and the head is `FCH` (linear) or `MLP_<width>`. This is **the same string the analysis loader parses** — download a run's CSV from W&B, append `_frozen` / `_finetune` / `_regret`, and drop it into the experiment folder (see [analysis.md](analysis.md#filename-grammar-how-head-labels-are-recovered)).
 
 ## Adding a new model
 
@@ -77,7 +101,20 @@ Edit `slurm/search.slurm` — set `REPO_PATH` to your cluster checkout, set `--m
 sbatch slurm/search.slurm
 ```
 
-Results land in `runs/$SLURM_JOB_ID/results.jsonl` — one line per `(dataset, model)` with metrics + per-substep timing. See [slurm/README.md](slurm/README.md) for details.
+Results land in `runs/$SLURM_JOB_ID/results.jsonl` — one line per `(dataset, model, strategy)` with metrics + per-substep timing (plus `runs/$SLURM_JOB_ID/regret.json` under `--strategy full_eval`). See [slurm/README.md](slurm/README.md) for details.
+
+## Analysing results
+
+Turn a `full_eval` run's CSVs into tables, plots, and a single `SUMMARY.md` to hand to Claude for the report prose. Viz deps live in an optional group (`uv sync --group analysis`).
+
+```bash
+python -m mlsys analyze results/<experiment>                 # → results/<experiment>/analysis/SUMMARY.md
+python -m mlsys regret --frozen F.csv --finetune T.csv       # standalone regret recompute (crash recovery)
+```
+
+Gather a run's CSVs into one folder per experiment. Each file keeps its **W&B run name** as the stem plus a `_frozen` / `_finetune` / `_regret` suffix — e.g. download `2296342_wine_reviews_fulleval_16_model_MLP_512` from W&B, save it as `..._MLP_512_frozen.csv`, and drop it in. `analyze` recovers head/width/dataset from that name, so the naming matters — see the [filename grammar](analysis.md#filename-grammar-how-head-labels-are-recovered).
+
+Full plot/table catalog, the folder/filename conventions, and the crash-recovery recipe are in **[analysis.md](analysis.md)**.
 
 ## Tooling at a glance
 

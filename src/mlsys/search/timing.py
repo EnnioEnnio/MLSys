@@ -8,9 +8,12 @@ and in ``results.jsonl``.
 
 from __future__ import annotations
 
+import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+
+log = logging.getLogger(__name__)
 
 
 def _cuda_sync() -> None:
@@ -51,18 +54,25 @@ class TimingBreakdown:
 class Timer:
     """Context-manager-based timer that accumulates into a `TimingBreakdown`."""
 
-    def __init__(self) -> None:
+    def __init__(self, label: str | None = None) -> None:
         self.breakdown = TimingBreakdown()
+        # When set, each section logs its start/finish at DEBUG so a long run shows
+        # which substep is currently executing (e.g. "frozen:all-MiniLM-L6-v2").
+        self.label = label
 
     @contextmanager
     def section(self, name: str):
         _cuda_sync()
+        if self.label is not None:
+            log.debug("[%s] %s …", self.label, name)
         start = time.perf_counter()
         try:
             yield
         finally:
             _cuda_sync()
             elapsed = time.perf_counter() - start
+            if self.label is not None:
+                log.debug("[%s] %s done in %.2fs", self.label, name, elapsed)
             if hasattr(self.breakdown, name):
                 setattr(self.breakdown, name, getattr(self.breakdown, name) + elapsed)
             else:

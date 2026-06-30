@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+.DS_Store
+# Generated analysis reports — regenerate with `python -m mlsys analyze results/<exp>`.
+# Keep the experiment CSVs (irreproducible run outputs); drop the derived plots/tables.
+results/*/analysis/

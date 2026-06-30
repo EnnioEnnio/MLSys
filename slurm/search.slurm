@@ -4,7 +4,7 @@
 #SBATCH --mail-user=slack:<YOUR_USERNAME>
 #SBATCH --partition=gpu-batch
 #SBATCH -C ARCH:X86
-#SBATCH --time=2:00:00
+#SBATCH --time=12:00:00
 #SBATCH --gpus=a100:1
 #SBATCH --mem=64G
 #SBATCH --job-name=mlsys-search
@@ -17,6 +17,15 @@
 # just those two pins before installing; all other NGC pins stay in force.
 # IMPORTANT: Update REPO_PATH below to match your cluster home directory path.
 # NOTE: Excludes V100 GPUs (CUDA 7.0) since PyTorch 25.03 requires CUDA capability >= 7.5.
+#
+# Strategy selection (edit the STRATEGY variable below):
+#   frozen     — FC head on the frozen backbone; cheap proxy ranking.
+#                Fast. Does NOT produce regret.json.
+#   finetune   — Unfreeze backbone + train backbone+head jointly; ground-truth scores.
+#                Expensive. Does NOT produce regret.json.
+#   full_eval  — Both passes over the pool, then writes the regret-vs-budget curve.
+#                Most expensive. Produces both results.jsonl and regret.json.
+# Adjust --time above to match the chosen strategy.
 
 # Fail loudly: any unset var, failed command, or broken pipe aborts the job
 # non-zero so SLURM/CI don't treat a failed setup as success.
@@ -56,22 +65,38 @@ pip install --no-cache-dir -e /workspace
 '
 
 # Step 2: Run model search
-echo "Running model search..."
+# Search strategy for this run (see header for options). Edit and re-submit to change.
+STRATEGY=full_eval
+
+echo "Running model search (strategy=$STRATEGY)..."
 # expandable_segments lets the CUDA allocator grow/shrink segments instead of
 # locking fixed-size blocks, so reserved memory from one backbone can be reused
 # by the next differently-sized one. Without it the ~N-model loop fragments the
 # GPU and OOMs on a small contiguous allocation. Forwarded into the container.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+# Finetune flags are only meaningful for the finetune and full_eval strategies;
+# they are accepted but ignored by the frozen strategy.
+FINETUNE_ARGS=""
+if [[ "$STRATEGY" == "finetune" || "$STRATEGY" == "full_eval" ]]; then
+  FINETUNE_ARGS="--finetune-epochs 3 --finetune-lr 2e-5 --finetune-batch-size 64"
+fi
+
 srun --container-name=$CONTAINER_NAME \
      --container-mounts=$REPO_PATH:/workspace \
      --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF \
      --container-workdir=/workspace \
      python -m mlsys search \
        --dataset wine_reviews \
-       --strategy full_eval \
+       --strategy $STRATEGY \
+       --hidden 0 \
        --output-dir /workspace/runs/$SLURM_JOB_ID \
+       $FINETUNE_ARGS \
        --wandb
 
 echo "Job completed!"
 echo "Output files:"
 echo "  - runs/$SLURM_JOB_ID/results.jsonl"
+if [[ "$STRATEGY" == "full_eval" ]]; then
+  echo "  - runs/$SLURM_JOB_ID/regret.json"
+fi

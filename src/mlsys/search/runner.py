@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import torch
 
 from mlsys.datasets.registry import REQUIRED_SPLITS
-from mlsys.head import HeadTrainConfig, train_head
+from mlsys.finetune import FinetuneConfig, train_full_model
+from mlsys.head import FCHead, HeadTrainConfig, train_head
+from mlsys.models.backbone import TrainableBackbone
 from mlsys.models.registry import ModelSpec, build_backbone
 from mlsys.search.metrics import RegressionMetrics, regression_metrics
 from mlsys.search.timing import Timer, reset_peak_gpu_memory
@@ -29,12 +31,14 @@ class RunRecord:
     head_train_curve: list[float]
     head_val_curve: list[float]
     epochs_run: int
+    strategy: str = "frozen"
     extras: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "dataset": self.dataset,
             "model": self.model,
+            "strategy": self.strategy,
             "metrics": self.metrics.to_dict(),
             "timing": self.timing,
             "head_train_curve": self.head_train_curve,
@@ -123,9 +127,9 @@ def score_candidate(
     """
     head_config = head_config or HeadTrainConfig()
     reset_peak_gpu_memory()
-    timer = Timer()
     if seeds is None:
         seeds = _make_seeds(head_repeats)
+    timer = Timer(label=f"frozen:{spec.name}")
 
     with timer.section("prepare_model_s"):
         backbone = build_backbone(spec, device=device)
@@ -168,6 +172,103 @@ def score_candidate(
             "embedding_dim": spec.embedding_dim,
             # Mirror FCHead's own linear/mlp decision (hidden None *or* <= 0 -> linear).
             "head_type": "mlp" if head_config.hidden and head_config.hidden > 0 else "linear",
+            "head_repeats": head_repeats,
+        },
+    )
+
+
+def _head_type(head_config: HeadTrainConfig) -> str:
+    # Mirror FCHead's own linear/mlp decision (hidden None *or* <= 0 -> linear).
+    return "mlp" if head_config.hidden and head_config.hidden > 0 else "linear"
+
+
+def finetune_candidate(
+    dataset: LoadedDataset,
+    spec: ModelSpec,
+    *,
+    device: str = "cpu",
+    batch_size: int = 64,
+    head_config: HeadTrainConfig | None = None,
+    finetune_config: FinetuneConfig | None = None,
+    head_repeats: int = 1,
+) -> RunRecord:
+    """Unfreeze the backbone and train backbone+head jointly, then score on test.
+
+    This is the expensive ground-truth signal ``t(m, D)`` for the regret metric. Inference
+    is fused into training (``train_head_s``), so ``inference_s`` stays 0. ``head_repeats``
+    defaults to 1: re-fine-tuning a full backbone N times is too costly, so regret's
+    expectations collapse to point estimates (see REGRET.md note 2).
+
+    Static / non-trainable backbones (``can_finetune=False``, e.g. model2vec) can't be
+    fine-tuned, so we fall back to the frozen :func:`score_candidate` score and tag the row
+    with ``finetune_skipped=True`` (finetune score == frozen score for them).
+    """
+    head_config = head_config or HeadTrainConfig()
+    finetune_config = finetune_config or FinetuneConfig()
+    reset_peak_gpu_memory()
+    timer = Timer(label=f"finetune:{spec.name}")
+
+    with timer.section("prepare_model_s"):
+        backbone = build_backbone(spec, device=device)
+
+    if not getattr(backbone, "can_finetune", False):
+        # Non-trainable backbone: finetune is a no-op, so reuse the frozen path.
+        release_gpu_memory(device)
+        record = score_candidate(
+            dataset,
+            spec,
+            device=device,
+            batch_size=batch_size,
+            head_config=head_config,
+            head_repeats=head_repeats,
+        )
+        record.strategy = "finetune"
+        record.extras["finetune_skipped"] = True
+        return record
+
+    # Past the guard, the backbone is fine-tunable; narrow the type for the trainer.
+    trainable = cast(TrainableBackbone, backbone)
+
+    with timer.section("prepare_data_s"):
+        rows = {split: list(dataset.split(split)) for split in REQUIRED_SPLITS}
+
+    head = FCHead(in_dim=backbone.embedding_dim, hidden=head_config.hidden).to(device)
+
+    with timer.section("train_head_s"):
+        # Inference is fused into the joint loop, so inference_s stays 0 for finetune.
+        result = train_full_model(trainable, head, rows, head_config, finetune_config, device)
+
+    with timer.section("eval_s"):
+        trainable.eval()
+        result.head.eval()
+        bs = finetune_config.batch_size
+        test_rows = rows["test"]
+        with torch.inference_mode():
+            preds = [
+                result.head(backbone.encode([r.text for r in test_rows[s : s + bs]]))
+                .detach()
+                .cpu()
+                .numpy()
+                for s in range(0, len(test_rows), bs)
+            ]
+        all_preds = np.concatenate(preds) if preds else np.zeros((0,))
+        y_test = np.array([r.target for r in test_rows], dtype=np.float64)
+        metrics = regression_metrics(y_test, all_preds)
+
+    timer.record_peak_gpu_mb()
+
+    return RunRecord(
+        dataset=dataset.spec.name,
+        model=spec.name,
+        metrics=metrics,
+        timing=timer.breakdown.to_dict(),
+        head_train_curve=result.train_curve,
+        head_val_curve=result.val_curve,
+        epochs_run=result.epochs_run,
+        strategy="finetune",
+        extras={
+            "embedding_dim": spec.embedding_dim,
+            "head_type": _head_type(head_config),
             "head_repeats": head_repeats,
         },
     )

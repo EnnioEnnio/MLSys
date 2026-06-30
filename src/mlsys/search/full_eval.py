@@ -42,7 +42,13 @@ log = logging.getLogger(__name__)
 STRATEGIES = ("frozen", "finetune", "full_eval")
 
 # Wall-clock substep fields summed for the per-candidate "done in Ns" log line.
-_TIMING_KEYS = ("prepare_model_s", "prepare_data_s", "inference_s", "train_head_s", "eval_s")
+_TIMING_KEYS = (
+    "prepare_model_s",
+    "prepare_data_s",
+    "inference_s",
+    "train_head_s",
+    "eval_s",
+)
 
 
 def _resolve_models(model_names: Iterable[str] | None) -> list[ModelSpec]:

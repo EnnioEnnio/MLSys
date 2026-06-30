@@ -78,6 +78,10 @@ def _embed_split(
     return torch.cat(feats, dim=0), torch.tensor(targets, dtype=torch.float32, device=device)
 
 
+def _make_seeds(length: int) -> list[int]:
+    return [int(torch.randint(0, 2**32 - 1, (1,)).item()) for _ in range(length)]
+
+
 def release_gpu_memory(device: str) -> None:
     """Drop dereferenced GPU tensors and return cached blocks to the allocator.
 
@@ -121,7 +125,7 @@ def score_candidate(
     reset_peak_gpu_memory()
     timer = Timer()
     if seeds is None:
-        seeds = [int(torch.randint(0, 2**32 - 1, (1,)).item()) for _ in range(head_repeats)]
+        seeds = _make_seeds(head_repeats)
 
     with timer.section("prepare_model_s"):
         backbone = build_backbone(spec, device=device)

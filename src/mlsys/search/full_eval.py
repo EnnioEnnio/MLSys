@@ -28,6 +28,7 @@ from mlsys.models.registry import ModelSpec, load_specs
 from mlsys.search.regret import regret_curve
 from mlsys.search.runner import (
     RunRecord,
+    _make_seeds,
     finetune_candidate,
     release_gpu_memory,
     score_candidate,
@@ -111,6 +112,7 @@ def run_frozen(
 ) -> list[RunRecord]:
     """Frozen-backbone pass: train an FC head on every candidate; append to results.jsonl."""
     specs = _resolve_models(model_names)
+    seeds = _make_seeds(head_repeats)
     return _run_pass(
         specs,
         out_path=results_path(output_dir),
@@ -125,6 +127,7 @@ def run_frozen(
             batch_size=batch_size,
             head_config=head_config,
             head_repeats=head_repeats,
+            seeds=seeds,
         ),
     )
 

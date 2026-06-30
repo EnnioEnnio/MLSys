@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
@@ -82,6 +82,10 @@ def _embed_split(
     return torch.cat(feats, dim=0), torch.tensor(targets, dtype=torch.float32, device=device)
 
 
+def _make_seeds(length: int) -> list[int]:
+    return [int(torch.randint(0, 2**32 - 1, (1,)).item()) for _ in range(length)]
+
+
 def release_gpu_memory(device: str) -> None:
     """Drop dereferenced GPU tensors and return cached blocks to the allocator.
 
@@ -114,14 +118,17 @@ def score_candidate(
     batch_size: int = 64,
     head_config: HeadTrainConfig | None = None,
     head_repeats: int = 3,
+    seeds: Sequence[int | None] | None = None,
 ) -> RunRecord:
     """Train an FC head on `dataset` using embeddings from `spec`'s backbone, score on test.
 
-    The head is trained `head_repeats` times from different random initialisations and the
-    test predictions are averaged, reducing variance.
+    The head is trained `head_repeats` times with the provided seeds (or random ones if not given)
+    and the test predictions are averaged, reducing variance.
     """
     head_config = head_config or HeadTrainConfig()
     reset_peak_gpu_memory()
+    if seeds is None:
+        seeds = _make_seeds(head_repeats)
     timer = Timer(label=f"frozen:{spec.name}")
 
     with timer.section("prepare_model_s"):
@@ -139,7 +146,8 @@ def score_candidate(
 
     with timer.section("train_head_s"):
         head_results = [
-            train_head(x_train, y_train, x_val, y_val, head_config) for _ in range(head_repeats)
+            train_head(x_train, y_train, x_val, y_val, head_config, seeds[i])
+            for i in range(head_repeats)
         ]
 
     with timer.section("eval_s"):

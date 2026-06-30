@@ -63,6 +63,7 @@ def train_head(
     x_val: torch.Tensor,
     y_val: torch.Tensor,
     config: HeadTrainConfig | None = None,
+    seed: int | None = None,
 ) -> HeadTrainResult:
     """Train an FCHead with AdamW + MSE, early-stop on val-MSE plateau."""
     if config is None:
@@ -73,6 +74,10 @@ def train_head(
             f"{x_train.size(0)} train and {x_val.size(0)} val rows "
             "(check the dataset splits aren't empty after loading/filtering)"
         )
+    if seed is not None:
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
     device = x_train.device
     head = FCHead(in_dim=x_train.size(1), hidden=config.hidden).to(device)
     optim = torch.optim.AdamW(head.parameters(), lr=config.lr, weight_decay=config.weight_decay)

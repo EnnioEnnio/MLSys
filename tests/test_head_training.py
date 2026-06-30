@@ -43,3 +43,16 @@ def test_train_head_rejects_empty_split() -> None:
         train_head(empty_x, empty_y, x, y, cfg)
     with pytest.raises(ValueError, match="non-empty"):
         train_head(x, y, empty_x, empty_y, cfg)
+
+
+def test_seed_produces_identical_initial_weights() -> None:
+    d = 16
+    x = torch.randn(10, d)
+    y = torch.randn(10)
+    cfg = HeadTrainConfig(epochs=0)
+
+    result1 = train_head(x, y, x, y, cfg, seed=42)
+    result2 = train_head(x, y, x, y, cfg, seed=42)
+
+    for p1, p2 in zip(result1.head.parameters(), result2.head.parameters(), strict=True):
+        assert torch.equal(p1, p2)

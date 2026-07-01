@@ -68,6 +68,43 @@ def _row(
     }
 
 
+def _write_repeat_pair(
+    folder: Path,
+    run_id: str,
+    head: str,
+    *,
+    with_regret: bool,
+    head_type="mlp",
+):
+    """Write an r1+r3 (+optional regret) CSV pair for a frozen repeat-count comparison."""
+    import pandas as pd
+
+    # r1: lower-variance proxy (repeat=1); r3: higher-variance truth (repeat=3).
+    # Same model pool as _write_triple but both passes are "frozen" (inference_s > 0 for both).
+    r1_rows = [
+        _row("alpha", 0.48, inference_s=10, train_head_s=5, epochs_run=20, strategy="frozen"),
+        _row("beta", 0.38, inference_s=10, train_head_s=5, epochs_run=20, strategy="frozen"),
+        _row("gamma", 0.28, inference_s=10, train_head_s=5, epochs_run=20, strategy="frozen"),
+        _row("m2v", 0.18, inference_s=2, train_head_s=5, epochs_run=20, strategy="frozen"),
+    ]
+    r3_rows = [
+        _row("alpha", 0.50, inference_s=10, train_head_s=15, epochs_run=20, strategy="frozen"),
+        _row("beta", 0.40, inference_s=10, train_head_s=15, epochs_run=20, strategy="frozen"),
+        _row("gamma", 0.30, inference_s=10, train_head_s=15, epochs_run=20, strategy="frozen"),
+        _row("m2v", 0.20, inference_s=2, train_head_s=15, epochs_run=20, strategy="frozen"),
+    ]
+    for kind, rows in (("r1", r1_rows), ("r3", r3_rows)):
+        for r in rows:
+            r["head_type"] = head_type
+        df = pd.DataFrame(rows, columns=_COLS)
+        df.to_csv(folder / f"{run_id}_wine_reviews_frozen_4_model_{head}_{kind}.csv", index=False)
+    if with_regret:
+        from mlsys.analysis.regret_recompute import recompute_regret
+
+        rc = recompute_regret(pd.DataFrame(r1_rows), pd.DataFrame(r3_rows))
+        rc.to_csv(folder / f"{run_id}_wine_reviews_frozen_4_model_{head}_regret.csv", index=False)
+
+
 def _write_triple(
     folder: Path,
     run_id: str,
@@ -187,6 +224,13 @@ def test_parse_filename_fch_and_mlp():
 def test_parse_filename_single_token_dataset():
     p = parse_filename("42_wine_frozen_8_model_MLP_256_finetune.csv")
     assert (p.run_id, p.dataset, p.strategy, p.num) == ("42", "wine", "frozen", "8")
+
+
+def test_parse_filename_r1_r3():
+    p = parse_filename("exp001_wine_reviews_frozen_4_model_FCH_r1.csv")
+    assert (p.run_id, p.head, p.kind) == ("exp001", "FCH", "r1")
+    p3 = parse_filename("exp001_wine_reviews_frozen_4_model_MLP_256_r3.csv")
+    assert (p3.run_id, p3.head, p3.kind) == ("exp001", "MLP_256", "r3")
 
 
 def test_parse_filename_rejects_bad_name():
@@ -483,6 +527,42 @@ def test_new_plots_smoke(tmp_path):
 
     p_frontier = plots.plot_value_frontier(triples, out)
     assert p_frontier.exists() and p_frontier.stat().st_size > 0
+
+
+# ----------------------------------------------------------------- r1/r3 repeat comparison
+
+
+def test_load_triple_r1_r3_labels(tmp_path):
+    """r1+r3 pair → proxy_label='repeat=1', truth_label='repeat=3', finetune_skipped empty."""
+    pytest.importorskip("pandas")
+    _write_repeat_pair(tmp_path, "exp001", "FCH", with_regret=False, head_type="linear")
+    (tf,) = loader.discover_triples(tmp_path)
+    assert tf.paths.keys() >= {"r1", "r3"}
+    triple = loader.load_triple(tf)
+    assert triple.proxy_label == "repeat=1"
+    assert triple.truth_label == "repeat=3"
+    # finetune_skipped must be empty — both passes are frozen (inference_s > 0 for all)
+    assert triple.finetune_skipped == {}
+    # diverged is still meaningful: truth r² < 0 flags a poor model
+    assert set(triple.diverged.keys()) == {"alpha", "beta", "gamma", "m2v"}
+    assert all(not v for v in triple.diverged.values())  # all r3 r² > 0
+
+
+def test_cli_analyze_r1_r3_smoke(tmp_path):
+    """Full analyze pipeline works end-to-end for a frozen r1/r3 repeat comparison."""
+    pytest.importorskip("pandas")
+    pytest.importorskip("seaborn")
+    from mlsys.cli import main
+
+    _write_repeat_pair(tmp_path, "exp001", "FCH", with_regret=False, head_type="linear")
+    rc = main(["analyze", str(tmp_path)])
+    assert rc == 0
+    out = tmp_path / "analysis"
+    summary = (out / "SUMMARY.md").read_text()
+    assert "repeat=1" in summary
+    assert "repeat=3" in summary
+    # The regret CSV should have been recomputed and written back.
+    assert (tmp_path / "exp001_wine_reviews_frozen_4_model_FCH_regret.csv").exists()
 
 
 # ----------------------------------------------------------------- CLI smokes

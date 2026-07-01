@@ -68,9 +68,13 @@ def _ensure_regret_csv(tf: loader._TripleFiles, triple: Triple) -> None:
     """Crash recovery: if the triple had no ``*_regret.csv``, recompute + write it back."""
     if "regret" in tf.paths:
         return
-    frozen_path = tf.paths["frozen"]
-    regret_name = frozen_path.name.replace("_frozen.csv", "_regret.csv")
-    regret_path = frozen_path.with_name(regret_name)
+    role = loader.resolve_role_pair(tf.paths)
+    if role is None:
+        return
+    proxy_kind = role[0]
+    proxy_path = tf.paths[proxy_kind]
+    regret_name = proxy_path.name.replace(f"_{proxy_kind}.csv", "_regret.csv")
+    regret_path = proxy_path.with_name(regret_name)
     curve = recompute_regret(triple.frozen, triple.finetune)
     curve.to_csv(regret_path, index=False)
     triple.regret = curve
@@ -83,17 +87,20 @@ def _rel(png: Path, base: Path) -> str:
 
 
 def _load_surviving(experiment_dir: Path) -> tuple[list[Triple], list[str]]:
-    """Load every head that has both frozen+finetune; recompute missing regret. Warn + skip rest.
+    """Load every head that has a recognised proxy/truth pair; recompute missing regret.
 
     Returns ``(triples, skipped)`` where ``skipped`` are human-readable skip reasons for the
-    metadata section.
+    metadata section.  Accepts any pair registered in ``loader._ROLE_PAIRS`` (e.g. frozen +
+    finetune, or r1 + r3).
     """
     triples: list[Triple] = []
     skipped: list[str] = []
     for tf in loader.discover_triples(experiment_dir):
-        if "frozen" not in tf.paths or "finetune" not in tf.paths:
-            missing = [k for k in ("frozen", "finetune") if k not in tf.paths]
-            msg = f"{tf.head} (run {tf.run_id}): missing {missing}"
+        if loader.resolve_role_pair(tf.paths) is None:
+            msg = (
+                f"{tf.head} (run {tf.run_id}): no recognised proxy/truth pair "
+                f"in kinds {sorted(tf.paths)}"
+            )
             log.warning("skipping head — %s", msg)
             skipped.append(msg)
             continue
@@ -225,6 +232,9 @@ def _assemble_summary(
     dataset = str(triples[0].frozen["dataset"].iloc[0]) if "dataset" in triples[0].frozen else "?"
     pool_size = len(triples[0].models)
 
+    proxy_label = triples[0].proxy_label if triples else "proxy"
+    truth_label = triples[0].truth_label if triples else "truth"
+
     parts: list[str] = [f"# Analysis — {experiment_dir.name}\n"]
 
     # 0. metadata
@@ -233,9 +243,11 @@ def _assemble_summary(
     parts.append(f"- **pool size:** {pool_size} models\n")
     parts.append(f"- **heads found:** {', '.join(heads)}\n")
     parts.append(f"- **heads skipped:** {'; '.join(skipped) if skipped else 'none'}\n")
+    parts.append(f"- **proxy pass:** {proxy_label}\n")
+    parts.append(f"- **truth pass:** {truth_label}\n")
 
-    # 1. frozen
-    parts.append("\n## 1. Frozen results (cheap proxy)\n")
+    # 1. proxy pass results
+    parts.append(f"\n## 1. {proxy_label} results (cheap proxy)\n")
     for t in triples:
         ph = per_head[t.head]
         cols = ["model", "frozen_r2", "frozen_mse", "frozen_mae", "frozen_spearman"]
@@ -244,17 +256,17 @@ def _assemble_summary(
         parts.append(_img(ph.png["r2_frozen_vs_finetune"], out_dir))
         parts.append(_img(ph.png["proxy_scatter"], out_dir))
 
-    # 2. finetune (with divergence / spearman-vs-r2 story)
+    # 2. truth pass results (with divergence / spearman-vs-r2 story)
     n_diverged_any = sum(1 for t in triples for d in t.diverged.values() if d)
     diverged_guardrail = (
-        f"> **Caveat:** {n_diverged_any} model/head combinations have finetune r² < 0 "
-        "(training instability — backbone diverged). Their finetune ground truth and the "
+        f"> **Caveat:** {n_diverged_any} model/head combinations have {truth_label} r² < 0 "
+        f"(training instability — backbone diverged). Their {truth_label} ground truth and the "
         "regret derived from it are unreliable; caveat accordingly when interpreting regret "
         "numbers that involve these models.\n"
         if n_diverged_any > 0
         else ""
     )
-    parts.append("\n## 2. Finetune results (ground truth)\n")
+    parts.append(f"\n## 2. {truth_label} results (ground truth)\n")
     if diverged_guardrail:
         parts.append(diverged_guardrail)
     for t in triples:
@@ -271,11 +283,11 @@ def _assemble_summary(
         parts.append(md(ph.table[cols]))
         parts.append(_img(ph.png["finetune_spearman_vs_r2"], out_dir))
 
-    # 3. frozen-vs-finetune comparison
-    parts.append("\n## 3. Frozen vs finetune comparison\n")
-    parts.append("### Frozen r² (model x head)\n")
+    # 3. proxy vs truth comparison
+    parts.append(f"\n## 3. {proxy_label} vs {truth_label} comparison\n")
+    parts.append(f"### {proxy_label} r² (model x head)\n")
     parts.append(md(comparison.frozen_matrix))
-    parts.append("### Finetune r² (model x head)\n")
+    parts.append(f"### {truth_label} r² (model x head)\n")
     parts.append(md(comparison.finetune_matrix))
     cpng = comparison.png
     parts.append(_img(cpng["heatmap_frozen_r2"], out_dir))
@@ -296,11 +308,17 @@ def _assemble_summary(
 
     # 5. RQ2 bottlenecks
     parts.append("\n## 5. RQ2 — bottlenecks (timing + GPU memory)\n")
-    parts.append(
-        "Frozen cost splits across `inference_s` (encode) + `train_head_s` (head fit); "
-        "finetune fuses inference into the joint loop so `inference_s = 0` and "
-        "`train_head_s` is the end-to-end finetune cost.\n"
-    )
+    if proxy_label == "frozen" and truth_label == "finetune":
+        parts.append(
+            "Frozen cost splits across `inference_s` (encode) + `train_head_s` (head fit); "
+            "finetune fuses inference into the joint loop so `inference_s = 0` and "
+            "`train_head_s` is the end-to-end finetune cost.\n"
+        )
+    else:
+        parts.append(
+            f"Both passes ({proxy_label} and {truth_label}) split cost across the same "
+            "substeps: `inference_s` (backbone encode) + `train_head_s` (head fit).\n"
+        )
     parts.append(_img(cpng["cost_vs_head"], out_dir))
     for t in triples:
         ph = per_head[t.head]
@@ -310,7 +328,7 @@ def _assemble_summary(
         parts.append(_img(ph.png["frozen_time_breakdown"], out_dir))
 
     # 6. synthesis stubs (templated numbers; prose for Claude)
-    parts.append(_synthesis_section(triples, per_head, comparison))
+    parts.append(_synthesis_section(triples, per_head, comparison, proxy_label, truth_label))
 
     # 7. distribution, ranking stability & cost (new gaps from the deck)
     parts.append(_section7(triples, comparison, out_dir))
@@ -416,6 +434,8 @@ def _synthesis_section(
     triples: list[Triple],
     per_head: dict[str, PerHead],
     comparison: Comparison,
+    proxy_label: str = "frozen",
+    truth_label: str = "finetune",
 ) -> str:
     lines: list[str] = ["\n## 6. Synthesis (numbers filled in; prose for the writer)\n"]
 
@@ -428,10 +448,11 @@ def _synthesis_section(
         lines.append(f"- **normalized regret@1:** {s.normalized_regret_at_1:.4f}  <!-- prose: -->")
         lines.append(f"- **budget-to-zero:** {s.budget_to_zero}  <!-- prose: -->")
         lines.append(
-            f"- **best frozen r²:** {s.best_frozen_r2:.4f} ({s.best_frozen_model})  <!-- prose: -->"
+            f"- **best {proxy_label} r²:** {s.best_frozen_r2:.4f} "
+            f"({s.best_frozen_model})  <!-- prose: -->"
         )
         lines.append(
-            f"- **best finetune r²:** {s.best_finetune_r2:.4f} "
+            f"- **best {truth_label} r²:** {s.best_finetune_r2:.4f} "
             f"({s.best_finetune_model})  <!-- prose: -->"
         )
         lines.append(f"- **diverged models:** {s.n_diverged}  <!-- prose: -->")
@@ -447,7 +468,7 @@ def _synthesis_section(
 
     # --- diverged-model story table ---
     diverged = comparison.diverged
-    lines.append("#### Diverged-model story (rank kept, scale broken)\n")
+    lines.append(f"#### Diverged-model story ({truth_label} r² < 0)\n")
     if len(diverged):
         lines.append(tables.df_to_markdown(diverged))
     else:
@@ -467,27 +488,24 @@ def _synthesis_section(
     mem_ratio = f"{mem_ft / mem_fz:.1f}x" if mem_fz > 0 else "n/a"
     lines.append(f"For the best model (**{best_model}**, head {widest.head}):\n")
     lines.append(
-        f"- **finetune/frozen train cost ratio:** {cost_ratio} "
+        f"- **{truth_label}/{proxy_label} train cost ratio:** {cost_ratio} "
         f"({ft_cost:.0f}s vs {fz_cost:.0f}s)  <!-- prose: -->"
     )
     lines.append(
-        f"- **finetune/frozen peak GPU mem ratio:** {mem_ratio} "
+        f"- **{truth_label}/{proxy_label} peak GPU mem ratio:** {mem_ratio} "
         f"({mem_ft:.0f}MB vs {mem_fz:.0f}MB)  <!-- prose: -->\n"
     )
 
     # Encode (inference_s) is the *backbone-specific* cost — head fitting is the same head
-    # everywhere — so the model2vec-vs-transformer spread (the ~10x story) reads off it, not
-    # off frozen_total_s (which head training dilutes).
+    # everywhere — so the backbone spread reads off it, not off total_s (which dilutes).
     encode = ph_table[["model", "frozen_inference_s"]]
     cheapest = encode.loc[encode["frozen_inference_s"].idxmin()]
     priciest = encode.loc[encode["frozen_inference_s"].idxmax()]
     cheap_s = float(cheapest["frozen_inference_s"])
     pricey_s = float(priciest["frozen_inference_s"])
-    # Guard the ratio: a 0s cheapest encode (a hypothetical zero-cost backbone) would divide
-    # by zero — fall back to "n/a" but still report the absolute spread.
     spread_str = f"{pricey_s / cheap_s:.1f}x" if cheap_s > 0 else "n/a"
     lines.append(
-        f"- **backbone encode-cost spread (head {widest.head}, frozen inference_s):** "
+        f"- **backbone encode-cost spread (head {widest.head}, {proxy_label} inference_s):** "
         f"{spread_str} — cheapest {cheapest['model']} {cheap_s:.0f}s vs "
         f"priciest {priciest['model']} {pricey_s:.0f}s  <!-- prose: -->\n"
     )

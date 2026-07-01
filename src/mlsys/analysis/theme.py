@@ -27,6 +27,14 @@ PASS_MARKERS: dict[str, str] = {
     "finetune": "s",
 }
 
+# Role-based aliases: proxy = cheap ranking pass, truth = expensive ground-truth pass.
+# Use these instead of PASS_COLORS["frozen"] / PASS_COLORS["finetune"] in plot code so
+# that the colour mapping stays correct for non-frozen/finetune comparison modes (e.g. r1/r3).
+PROXY_COLOR: str = PASS_COLORS["frozen"]
+TRUTH_COLOR: str = PASS_COLORS["finetune"]
+PROXY_MARKER: str = PASS_MARKERS["frozen"]
+TRUTH_MARKER: str = PASS_MARKERS["finetune"]
+
 # --------------------------------------------------------------------------- status colours
 STATUS_COLORS: dict[str, str] = {
     "ok": "#4A5A6A",  # slate

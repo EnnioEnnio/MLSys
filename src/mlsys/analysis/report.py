@@ -452,8 +452,7 @@ def _synthesis_section(
             f"({s.best_proxy_model})  <!-- prose: -->"
         )
         lines.append(
-            f"- **best {truth_label} r²:** {s.best_gt_r2:.4f} "
-            f"({s.best_gt_model})  <!-- prose: -->"
+            f"- **best {truth_label} r²:** {s.best_gt_r2:.4f} ({s.best_gt_model})  <!-- prose: -->"
         )
         lines.append(f"- **diverged models:** {s.n_diverged}  <!-- prose: -->")
         lines.append(f"- **proxy rank Spearman:** {s.rank_spearman:.4f}  <!-- prose: -->\n")

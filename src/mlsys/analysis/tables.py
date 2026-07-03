@@ -318,9 +318,7 @@ def epochs_table(triples: list[Triple]) -> pd.DataFrame:
             continue
         proxy_epochs = t.proxy["epochs_run"].dropna().astype(float)
         gt_epochs = (
-            t.gt["epochs_run"].dropna().astype(float)
-            if "epochs_run" in t.gt.columns
-            else None
+            t.gt["epochs_run"].dropna().astype(float) if "epochs_run" in t.gt.columns else None
         )
         rows.append(
             {
@@ -461,9 +459,7 @@ def cost_table(triples: list[Triple]) -> pd.DataFrame:
                     "head": t.head,
                     "model": model,
                     "proxy_total_s": proxy_total,
-                    "gt_total_s": (
-                        float(ftr["train_head_s"]) if ftr is not None else float("nan")
-                    ),
+                    "gt_total_s": (float(ftr["train_head_s"]) if ftr is not None else float("nan")),
                     "proxy_peak_gpu_mem_mb": float(fzr.get("peak_gpu_mem_mb", float("nan"))),
                     "gt_peak_gpu_mem_mb": (
                         float(ftr["peak_gpu_mem_mb"]) if ftr is not None else float("nan")

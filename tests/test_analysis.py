@@ -267,7 +267,7 @@ def test_load_triple_flags_diverged_and_skipped(tmp_path):
     assert "regret" not in tf.paths  # missing-regret case
     triple = loader.load_triple(tf)
     assert triple.diverged == {"alpha": True, "beta": False, "gamma": False, "m2v": False}
-    assert triple.finetune_skipped == {
+    assert triple.gt_skipped == {
         "alpha": False,
         "beta": False,
         "gamma": False,
@@ -326,7 +326,7 @@ def test_table_builders_on_tiny_frames(tmp_path):
     assert "delta_r2" in per.columns
 
     summary = tables.per_triple_summary(triple)
-    assert summary.best_finetune_model == "beta"  # 0.70 is max finetune r2
+    assert summary.best_gt_model == "beta"  # 0.70 is max gt r2
     assert summary.n_diverged == 1
     assert 1 <= summary.budget_to_zero <= len(triple.models)
 
@@ -349,10 +349,10 @@ def test_frozen_distribution_table(tmp_path):
     df = tables.frozen_distribution_table(triples)
     expected_cols = [
         "head",
-        "mean_frozen_r2",
-        "std_frozen_r2",
-        "min_frozen_r2",
-        "max_frozen_r2",
+        "mean_proxy_r2",
+        "std_proxy_r2",
+        "min_proxy_r2",
+        "max_proxy_r2",
         "n_negative",
     ]
     assert list(df.columns) == expected_cols
@@ -364,7 +364,7 @@ def test_frozen_distribution_table(tmp_path):
     expected_std = math.sqrt((0.0225 + 0.0025 + 0.0025 + 0.0225) / 4)
     import pytest as _pytest
 
-    actual = df.loc[df["head"] == "FCH", "std_frozen_r2"].iloc[0]
+    actual = df.loc[df["head"] == "FCH", "std_proxy_r2"].iloc[0]
     assert actual == _pytest.approx(expected_std, abs=1e-6)
 
 
@@ -396,15 +396,15 @@ def test_epochs_table(tmp_path):
     df = tables.epochs_table(triples)
     assert set(df.columns) >= {
         "head",
-        "mean_frozen_epochs",
-        "n_frozen_at_cap",
-        "frozen_cap",
-        "mean_finetune_epochs",
+        "mean_proxy_epochs",
+        "n_proxy_at_cap",
+        "proxy_cap",
+        "mean_gt_epochs",
     }
     assert len(df) == 2
     # All frozen rows have epochs_run=20, cap=20 → n_frozen_at_cap=4 (all 4 models hit cap)
-    assert df["frozen_cap"].iloc[0] == 20
-    assert df.loc[df["head"] == "FCH", "n_frozen_at_cap"].iloc[0] == 4
+    assert df["proxy_cap"].iloc[0] == 20
+    assert df.loc[df["head"] == "FCH", "n_proxy_at_cap"].iloc[0] == 4
 
 
 def test_head_rank_agreement_matrix(tmp_path):
@@ -463,10 +463,10 @@ def test_value_frontier_table(tmp_path):
     df = tables.value_frontier_table(triples)
     assert set(df.columns) >= {
         "model",
-        "frozen_inference_s",
-        "frozen_r2",
-        "finetune_r2",
-        "frozen_peak_gpu_mem_mb",
+        "proxy_inference_s",
+        "proxy_r2",
+        "gt_r2",
+        "proxy_peak_gpu_mem_mb",
     }
     assert len(df) == 4  # 4 models, widest head
     # Sorted by inference_s asc: m2v (2s) should appear before alpha/beta/gamma (10s)
@@ -482,8 +482,8 @@ def test_per_triple_table_has_frozen_epochs(tmp_path):
     triple = loader.load_triple(tf)
 
     df = tables.per_triple_table(triple)
-    assert "frozen_epochs" in df.columns
-    assert list(df["frozen_epochs"]) == [20, 20, 20, 20]
+    assert "proxy_epochs" in df.columns
+    assert list(df["proxy_epochs"]) == [20, 20, 20, 20]
 
 
 # ----------------------------------------------------------------- plot smoke
@@ -500,7 +500,7 @@ def test_plot_smoke_savefig(tmp_path):
     out = tmp_path / "plots"
     p = plots.plot_regret_curve(triple, out)
     assert p.exists() and p.stat().st_size > 0
-    p2 = plots.plot_heatmap_frozen_r2([triple], out)
+    p2 = plots.plot_heatmap_proxy_r2([triple], out)
     assert p2.exists() and p2.stat().st_size > 0
 
 
@@ -522,7 +522,7 @@ def test_new_plots_smoke(tmp_path):
     p_rank = plots.plot_head_rank_agreement(triples, out)
     assert p_rank.exists() and p_rank.stat().st_size > 0
 
-    p_timing = plots.plot_frozen_timing_share(triples, out)
+    p_timing = plots.plot_proxy_timing_share(triples, out)
     assert p_timing.exists() and p_timing.stat().st_size > 0
 
     p_frontier = plots.plot_value_frontier(triples, out)
@@ -542,7 +542,7 @@ def test_load_triple_r1_r3_labels(tmp_path):
     assert triple.proxy_label == "repeat=1"
     assert triple.truth_label == "repeat=3"
     # finetune_skipped must be empty — both passes are frozen (inference_s > 0 for all)
-    assert triple.finetune_skipped == {}
+    assert triple.gt_skipped == {}
     # diverged is still meaningful: truth r² < 0 flags a poor model
     assert set(triple.diverged.keys()) == {"alpha", "beta", "gamma", "m2v"}
     assert all(not v for v in triple.diverged.values())  # all r3 r² > 0

@@ -29,17 +29,17 @@ class TripleSummary:
 
     head: str
     n_models: int
-    best_frozen_model: str
-    best_frozen_r2: float
-    best_finetune_model: str
-    best_finetune_r2: float
+    best_proxy_model: str
+    best_proxy_r2: float
+    best_gt_model: str
+    best_gt_r2: float
     regret_at_1: float
     normalized_regret_at_1: float
     budget_to_zero: int
     regret_auc: float
     rank_spearman: float
     n_diverged: int
-    n_finetune_skipped: int
+    n_gt_skipped: int
 
 
 def _fmt(value: object) -> str:
@@ -80,17 +80,17 @@ def write_table(df: pd.DataFrame, stem: str | Path) -> tuple[Path, Path]:
 
 
 def per_triple_table(triple: Triple) -> pd.DataFrame:
-    """Per-model frozen/finetune quality (r²,mse,mae,spearman) + Δ, flags, and cost columns.
+    """Per-model proxy/gt quality (r²,mse,mae,spearman) + Δ, flags, and cost columns.
 
-    Cost columns are labelled by pass: in the **frozen** pass cost splits across
-    ``inference_s`` (encode) and ``train_head_s`` (head fit); in the **finetune** pass
-    inference is fused into the joint loop so ``finetune_train_head_s`` is the end-to-end
-    finetune cost (``inference_s == 0``). See RQ2 framing in DATAPLAN / CLAUDE.md.
+    Cost columns are labelled by pass: in the **proxy** pass cost splits across
+    ``inference_s`` (encode) and ``train_head_s`` (head fit); in the **gt** pass
+    inference is fused into the joint loop so ``gt_train_head_s`` is the end-to-end
+    cost (``inference_s == 0``). See RQ2 framing in DATAPLAN / CLAUDE.md.
     """
     import pandas as pd
 
-    fz = triple.frozen.set_index("model")
-    ft = triple.finetune.set_index("model")
+    fz = triple.proxy.set_index("model")
+    ft = triple.gt.set_index("model")
     rows = []
     for model in triple.models:
         fzr = fz.loc[model]
@@ -99,26 +99,26 @@ def per_triple_table(triple: Triple) -> pd.DataFrame:
         rows.append(
             {
                 "model": model,
-                "frozen_r2": float(fzr["r2"]),
-                "finetune_r2": ft_r2,
+                "proxy_r2": float(fzr["r2"]),
+                "gt_r2": ft_r2,
                 "delta_r2": ft_r2 - float(fzr["r2"]),
-                "frozen_mse": float(fzr["mse"]),
-                "finetune_mse": float(ftr["mse"]) if ftr is not None else float("nan"),
-                "frozen_mae": float(fzr["mae"]),
-                "finetune_mae": float(ftr["mae"]) if ftr is not None else float("nan"),
-                "frozen_spearman": float(fzr["spearman"]),
-                "finetune_spearman": float(ftr["spearman"]) if ftr is not None else float("nan"),
-                "finetune_skipped": triple.finetune_skipped.get(model, False),
+                "proxy_mse": float(fzr["mse"]),
+                "gt_mse": float(ftr["mse"]) if ftr is not None else float("nan"),
+                "proxy_mae": float(fzr["mae"]),
+                "gt_mae": float(ftr["mae"]) if ftr is not None else float("nan"),
+                "proxy_spearman": float(fzr["spearman"]),
+                "gt_spearman": float(ftr["spearman"]) if ftr is not None else float("nan"),
+                "gt_skipped": triple.gt_skipped.get(model, False),
                 "diverged": triple.diverged.get(model, False),
-                "frozen_epochs": int(fzr["epochs_run"]) if "epochs_run" in fzr.index else 0,
-                "finetune_epochs": int(ftr["epochs_run"]) if ftr is not None else 0,
-                "frozen_inference_s": float(fzr.get("inference_s", float("nan"))),
-                "frozen_train_head_s": float(fzr.get("train_head_s", float("nan"))),
-                "finetune_train_head_s": (
+                "proxy_epochs": int(fzr["epochs_run"]) if "epochs_run" in fzr.index else 0,
+                "gt_epochs": int(ftr["epochs_run"]) if ftr is not None else 0,
+                "proxy_inference_s": float(fzr.get("inference_s", float("nan"))),
+                "proxy_train_head_s": float(fzr.get("train_head_s", float("nan"))),
+                "gt_train_head_s": (
                     float(ftr["train_head_s"]) if ftr is not None else float("nan")
                 ),
-                "frozen_peak_gpu_mem_mb": float(fzr.get("peak_gpu_mem_mb", float("nan"))),
-                "finetune_peak_gpu_mem_mb": (
+                "proxy_peak_gpu_mem_mb": float(fzr.get("peak_gpu_mem_mb", float("nan"))),
+                "gt_peak_gpu_mem_mb": (
                     float(ftr["peak_gpu_mem_mb"]) if ftr is not None else float("nan")
                 ),
             }
@@ -127,11 +127,11 @@ def per_triple_table(triple: Triple) -> pd.DataFrame:
 
 
 def rank_spearman(triple: Triple) -> float:
-    """Spearman(frozen r², finetune r²) across models — does the cheap proxy rank like truth?"""
+    """Spearman(proxy r², gt r²) across models — does the cheap proxy rank like truth?"""
     from scipy.stats import spearmanr
 
-    fz = triple.frozen.set_index("model")["r2"]
-    ft = triple.finetune.set_index("model")["r2"]
+    fz = triple.proxy.set_index("model")["r2"]
+    ft = triple.gt.set_index("model")["r2"]
     common = [m for m in triple.models if m in ft.index]
     if len(common) < 2:
         return float("nan")
@@ -147,24 +147,24 @@ def budget_to_zero(regret_df: pd.DataFrame) -> int:
 
 def per_triple_summary(triple: Triple) -> TripleSummary:
     """Headline numbers for one head: best models, regret@1, budget-to-zero, proxy rank-rho."""
-    fz = triple.frozen.set_index("model")["r2"]
-    ft = triple.finetune.set_index("model")["r2"]
+    fz = triple.proxy.set_index("model")["r2"]
+    ft = triple.gt.set_index("model")["r2"]
     regret_df = triple_regret_df(triple)
     first = regret_df.iloc[0]
     return TripleSummary(
         head=triple.head,
         n_models=len(triple.models),
-        best_frozen_model=str(fz.idxmax()),
-        best_frozen_r2=float(fz.max()),
-        best_finetune_model=str(ft.idxmax()),
-        best_finetune_r2=float(ft.max()),
+        best_proxy_model=str(fz.idxmax()),
+        best_proxy_r2=float(fz.max()),
+        best_gt_model=str(ft.idxmax()),
+        best_gt_r2=float(ft.max()),
         regret_at_1=float(first["regret"]),
         normalized_regret_at_1=float(first["normalized_regret"]),
         budget_to_zero=budget_to_zero(regret_df),
         regret_auc=float(regret_df["regret"].mean()),
         rank_spearman=rank_spearman(triple),
         n_diverged=int(sum(triple.diverged.values())),
-        n_finetune_skipped=int(sum(triple.finetune_skipped.values())),
+        n_gt_skipped=int(sum(triple.gt_skipped.values())),
     )
 
 
@@ -172,12 +172,12 @@ def per_triple_summary(triple: Triple) -> TripleSummary:
 
 
 def head_model_r2_matrix(triples: list[Triple], kind: str) -> pd.DataFrame:
-    """model x head r² matrix for ``kind`` in {"frozen","finetune"}; index = model."""
+    """model x head r² matrix for ``kind`` in {"proxy","gt"}; index = model."""
     import pandas as pd
 
     series = {}
     for t in triples:
-        frame = t.frozen if kind == "frozen" else t.finetune
+        frame = t.proxy if kind == "proxy" else t.gt
         series[t.head] = frame.set_index("model")["r2"]
     matrix = pd.DataFrame(series)
     matrix.index.name = "model"
@@ -185,7 +185,7 @@ def head_model_r2_matrix(triples: list[Triple], kind: str) -> pd.DataFrame:
 
 
 def divergence_matrix(triples: list[Triple]) -> pd.DataFrame:
-    """model x head boolean matrix of ``diverged`` (finetune r² < 0); index = model."""
+    """model x head boolean matrix of ``diverged`` (gt r² < 0); index = model."""
     import pandas as pd
 
     series = {t.head: pd.Series(t.diverged) for t in triples}
@@ -202,7 +202,7 @@ def per_head_summary_table(triples: list[Triple]) -> pd.DataFrame:
 
 
 def diverged_models_table(triples: list[Triple]) -> pd.DataFrame:
-    """Every model that diverged in *any* head: frozen→finetune r² + finetune rho, per head.
+    """Every model that diverged in *any* head: proxy→gt r² + gt rho, per head.
 
     Pins the "rank preserved (high Spearman), scale broken (negative r²)" story into a
     templated table so the narrative is written over given numbers, not re-derived from plots.
@@ -214,21 +214,21 @@ def diverged_models_table(triples: list[Triple]) -> pd.DataFrame:
     for model in diverged_any:
         row: dict[str, object] = {"model": model}
         for t in triples:
-            fz = t.frozen.set_index("model")["r2"]
-            ftf = t.finetune.set_index("model")
-            row[f"{t.head}_frozen_r2"] = float(fz[model]) if model in fz.index else float("nan")
+            fz = t.proxy.set_index("model")["r2"]
+            ftf = t.gt.set_index("model")
+            row[f"{t.head}_proxy_r2"] = float(fz[model]) if model in fz.index else float("nan")
             if model in ftf.index:
-                row[f"{t.head}_finetune_r2"] = float(ftf.loc[model, "r2"])
-                row[f"{t.head}_finetune_spearman"] = float(ftf.loc[model, "spearman"])
+                row[f"{t.head}_gt_r2"] = float(ftf.loc[model, "r2"])
+                row[f"{t.head}_gt_spearman"] = float(ftf.loc[model, "spearman"])
             else:
-                row[f"{t.head}_finetune_r2"] = float("nan")
-                row[f"{t.head}_finetune_spearman"] = float("nan")
+                row[f"{t.head}_gt_r2"] = float("nan")
+                row[f"{t.head}_gt_spearman"] = float("nan")
         rows.append(row)
     return pd.DataFrame(rows)
 
 
 def frozen_distribution_table(triples: list[Triple]) -> pd.DataFrame:
-    """Per-head frozen r² spread: mean/std/min/max and n_negative (#1 — spread-collapse story).
+    """Per-head proxy r² spread: mean/std/min/max and n_negative (#1 — spread-collapse story).
 
     Uses population std (ddof=0) to match the deck's reported 0.31→0.07 collapse.
     """
@@ -236,14 +236,14 @@ def frozen_distribution_table(triples: list[Triple]) -> pd.DataFrame:
 
     rows = []
     for t in triples:
-        r2 = t.frozen["r2"].astype(float)
+        r2 = t.proxy["r2"].astype(float)
         rows.append(
             {
                 "head": t.head,
-                "mean_frozen_r2": float(r2.mean()),
-                "std_frozen_r2": float(r2.std(ddof=0)),
-                "min_frozen_r2": float(r2.min()),
-                "max_frozen_r2": float(r2.max()),
+                "mean_proxy_r2": float(r2.mean()),
+                "std_proxy_r2": float(r2.std(ddof=0)),
+                "min_proxy_r2": float(r2.min()),
+                "max_proxy_r2": float(r2.max()),
                 "n_negative": int((r2 < 0).sum()),
             }
         )
@@ -251,17 +251,17 @@ def frozen_distribution_table(triples: list[Triple]) -> pd.DataFrame:
 
 
 def head_gain_table(triples: list[Triple]) -> pd.DataFrame:
-    """Per-model Δ frozen r² from narrowest to widest head (#2 — biggest gainers).
+    """Per-model Δ proxy r² from narrowest to widest head (#2 — biggest gainers).
 
-    Reuses the frozen-r² data already available in each triple; models sorted by gain desc.
+    Reuses the proxy-r² data already available in each triple; models sorted by gain desc.
     Single-head experiments: narrowest == widest, gain = 0 for every model.
     """
     import pandas as pd
 
     if not triples:
         return pd.DataFrame(columns=["model", "narrow_r2", "wide_r2", "gain"])
-    narrowest = triples[0].frozen.set_index("model")["r2"].astype(float)
-    widest = triples[-1].frozen.set_index("model")["r2"].astype(float)
+    narrowest = triples[0].proxy.set_index("model")["r2"].astype(float)
+    widest = triples[-1].proxy.set_index("model")["r2"].astype(float)
     models = [m for m in narrowest.index if m in widest.index]
     rows = [
         {
@@ -277,11 +277,11 @@ def head_gain_table(triples: list[Triple]) -> pd.DataFrame:
 
 
 def epochs_table(triples: list[Triple]) -> pd.DataFrame:
-    """Per-head early-stopping summary (#3): mean frozen epochs, n at cap, cap, mean finetune.
+    """Per-head early-stopping summary (#3): mean proxy epochs, n at cap, cap, mean gt.
 
-    ``frozen_cap`` = global max of ``epochs_run`` across all frozen passes.
-    ``n_frozen_at_cap`` = number of models that hit the cap (early stopping did not trigger).
-    Skips gracefully if ``epochs_run`` is missing from the frozen CSV.
+    ``proxy_cap`` = global max of ``epochs_run`` across all proxy passes.
+    ``n_proxy_at_cap`` = number of models that hit the cap (early stopping did not trigger).
+    Skips gracefully if ``epochs_run`` is missing from the proxy CSV.
     """
     import pandas as pd
 
@@ -289,49 +289,51 @@ def epochs_table(triples: list[Triple]) -> pd.DataFrame:
         return pd.DataFrame(
             columns=[
                 "head",
-                "mean_frozen_epochs",
-                "n_frozen_at_cap",
-                "frozen_cap",
-                "mean_finetune_epochs",
+                "mean_proxy_epochs",
+                "n_proxy_at_cap",
+                "proxy_cap",
+                "mean_gt_epochs",
             ]
         )
 
-    # Global cap = max epochs_run across all frozen passes (the configured patience limit).
+    # Global cap = max epochs_run across all proxy passes (the configured patience limit).
     all_caps: list[float] = []
     for t in triples:
-        if "epochs_run" in t.frozen.columns:
-            all_caps.extend(t.frozen["epochs_run"].dropna().tolist())
-    frozen_cap = int(max(all_caps)) if all_caps else None
+        if "epochs_run" in t.proxy.columns:
+            all_caps.extend(t.proxy["epochs_run"].dropna().tolist())
+    proxy_cap = int(max(all_caps)) if all_caps else None
 
     rows = []
     for t in triples:
-        if "epochs_run" not in t.frozen.columns:
+        if "epochs_run" not in t.proxy.columns:
             rows.append(
                 {
                     "head": t.head,
-                    "mean_frozen_epochs": float("nan"),
-                    "n_frozen_at_cap": float("nan"),
-                    "frozen_cap": frozen_cap,
-                    "mean_finetune_epochs": float("nan"),
+                    "mean_proxy_epochs": float("nan"),
+                    "n_proxy_at_cap": float("nan"),
+                    "proxy_cap": proxy_cap,
+                    "mean_gt_epochs": float("nan"),
                 }
             )
             continue
-        fz_epochs = t.frozen["epochs_run"].dropna().astype(float)
-        ft_epochs = (
-            t.finetune["epochs_run"].dropna().astype(float)
-            if "epochs_run" in t.finetune.columns
+        proxy_epochs = t.proxy["epochs_run"].dropna().astype(float)
+        gt_epochs = (
+            t.gt["epochs_run"].dropna().astype(float)
+            if "epochs_run" in t.gt.columns
             else None
         )
         rows.append(
             {
                 "head": t.head,
-                "mean_frozen_epochs": float(fz_epochs.mean()),
-                "n_frozen_at_cap": (
-                    int((fz_epochs == frozen_cap).sum()) if frozen_cap is not None else float("nan")
+                "mean_proxy_epochs": float(proxy_epochs.mean()),
+                "n_proxy_at_cap": (
+                    int((proxy_epochs == proxy_cap).sum())
+                    if proxy_cap is not None
+                    else float("nan")
                 ),
-                "frozen_cap": frozen_cap,
-                "mean_finetune_epochs": (
-                    float(ft_epochs.mean()) if ft_epochs is not None else float("nan")
+                "proxy_cap": proxy_cap,
+                "mean_gt_epochs": (
+                    float(gt_epochs.mean()) if gt_epochs is not None else float("nan")
                 ),
             }
         )
@@ -339,16 +341,16 @@ def epochs_table(triples: list[Triple]) -> pd.DataFrame:
 
 
 def head_rank_agreement_matrix(triples: list[Triple]) -> pd.DataFrame:
-    """Head x head Spearman rho over frozen r2 across the common model set (#4).
+    """Head x head Spearman rho over proxy r2 across the common model set (#4).
 
-    Each cell = Spearman(frozen r2 for head_i, frozen r2 for head_j) over models present
+    Each cell = Spearman(proxy r2 for head_i, proxy r2 for head_j) over models present
     in *both* heads. Index and columns = head labels. 1x1 for single-head experiments.
     """
     import pandas as pd
     from scipy.stats import spearmanr
 
     heads = [t.head for t in triples]
-    r2_by_head = {t.head: t.frozen.set_index("model")["r2"].astype(float) for t in triples}
+    r2_by_head = {t.head: t.proxy.set_index("model")["r2"].astype(float) for t in triples}
     matrix: dict[str, list[float]] = {h: [] for h in heads}
     for hi in heads:
         for hj in heads:
@@ -376,7 +378,7 @@ def frozen_timing_share_table(triples: list[Triple]) -> pd.DataFrame:
 
     rows = []
     for t in triples:
-        fz = t.frozen
+        fz = t.proxy
         totals = {k: float(fz[k].sum()) if k in fz.columns else 0.0 for k in SUBSTEP_KEYS}
         grand = sum(totals.values())
         if grand == 0.0:
@@ -405,7 +407,7 @@ def value_frontier_table(triples: list[Triple]) -> pd.DataFrame:
     Uses the widest head (``triples[-1]``) because ``inference_s`` is backbone-bound /
     head-independent, and the widest head gives the most informative r² cut. Writer must
     state explicitly that the frontier uses the widest head.
-    Sorted by ``frozen_inference_s`` ascending (cheapest first).
+    Sorted by ``proxy_inference_s`` ascending (cheapest first).
     """
     import pandas as pd
 
@@ -413,61 +415,61 @@ def value_frontier_table(triples: list[Triple]) -> pd.DataFrame:
         return pd.DataFrame(
             columns=[
                 "model",
-                "frozen_inference_s",
-                "frozen_r2",
-                "finetune_r2",
-                "frozen_peak_gpu_mem_mb",
+                "proxy_inference_s",
+                "proxy_r2",
+                "gt_r2",
+                "proxy_peak_gpu_mem_mb",
             ]
         )
     widest = triples[-1]
-    fz = widest.frozen.set_index("model")
-    ft = widest.finetune.set_index("model")
+    fz = widest.proxy.set_index("model")
+    ft = widest.gt.set_index("model")
     rows = []
     for model in widest.models:
         fzr = fz.loc[model]
         rows.append(
             {
                 "model": model,
-                "frozen_inference_s": float(fzr.get("inference_s", float("nan"))),
-                "frozen_r2": float(fzr["r2"]),
-                "finetune_r2": float(ft.loc[model, "r2"]) if model in ft.index else float("nan"),
-                "frozen_peak_gpu_mem_mb": float(fzr.get("peak_gpu_mem_mb", float("nan"))),
+                "proxy_inference_s": float(fzr.get("inference_s", float("nan"))),
+                "proxy_r2": float(fzr["r2"]),
+                "gt_r2": float(ft.loc[model, "r2"]) if model in ft.index else float("nan"),
+                "proxy_peak_gpu_mem_mb": float(fzr.get("peak_gpu_mem_mb", float("nan"))),
             }
         )
-    df = pd.DataFrame(rows).sort_values("frozen_inference_s").reset_index(drop=True)
+    df = pd.DataFrame(rows).sort_values("proxy_inference_s").reset_index(drop=True)
     return df
 
 
 def cost_table(triples: list[Triple]) -> pd.DataFrame:
-    """Per-(head,model) RQ2 cost: frozen total, finetune total, peak mem, epochs.
+    """Per-(head,model) RQ2 cost: proxy total, gt total, peak mem, epochs.
 
-    Frozen total = ``inference_s + train_head_s`` (encode + head fit); finetune total =
+    Proxy total = ``inference_s + train_head_s`` (encode + head fit); gt total =
     ``train_head_s`` (inference fused in). Surfaces the ~10x model2vec-vs-transformer spread.
     """
     import pandas as pd
 
     rows = []
     for t in triples:
-        fz = t.frozen.set_index("model")
-        ft = t.finetune.set_index("model")
+        fz = t.proxy.set_index("model")
+        ft = t.gt.set_index("model")
         for model in t.models:
             fzr = fz.loc[model]
             ftr = ft.loc[model] if model in ft.index else None
-            frozen_total = float(fzr.get("inference_s", 0.0)) + float(fzr.get("train_head_s", 0.0))
+            proxy_total = float(fzr.get("inference_s", 0.0)) + float(fzr.get("train_head_s", 0.0))
             rows.append(
                 {
                     "head": t.head,
                     "model": model,
-                    "frozen_total_s": frozen_total,
-                    "finetune_total_s": (
+                    "proxy_total_s": proxy_total,
+                    "gt_total_s": (
                         float(ftr["train_head_s"]) if ftr is not None else float("nan")
                     ),
-                    "frozen_peak_gpu_mem_mb": float(fzr.get("peak_gpu_mem_mb", float("nan"))),
-                    "finetune_peak_gpu_mem_mb": (
+                    "proxy_peak_gpu_mem_mb": float(fzr.get("peak_gpu_mem_mb", float("nan"))),
+                    "gt_peak_gpu_mem_mb": (
                         float(ftr["peak_gpu_mem_mb"]) if ftr is not None else float("nan")
                     ),
-                    "finetune_epochs": int(ftr["epochs_run"]) if ftr is not None else 0,
-                    "finetune_skipped": t.finetune_skipped.get(model, False),
+                    "gt_epochs": int(ftr["epochs_run"]) if ftr is not None else 0,
+                    "gt_skipped": t.gt_skipped.get(model, False),
                 }
             )
     return pd.DataFrame(rows)

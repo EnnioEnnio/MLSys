@@ -111,26 +111,26 @@ class Triple:
     """One head config's loaded frames + the per-model flags derived from them.
 
     ``regret`` is ``None`` when no ``*_regret.csv`` was present; callers recompute it.
-    ``diverged`` / ``finetune_skipped`` are model→bool maps keyed on the model name.
+    ``diverged`` / ``gt_skipped`` are model→bool maps keyed on the model name.
     ``proxy_label`` / ``truth_label`` are display names for the two passes (e.g. "frozen" /
     "finetune" for the standard full_eval, or "repeat=1" / "repeat=3" for a repeat comparison).
-    Internally the DataFrames are always accessed as ``.frozen`` (proxy) / ``.finetune`` (truth).
+    Internally the DataFrames are always accessed as ``.proxy`` (cheap pass) / ``.gt`` (truth).
     """
 
     run_id: str
     head: str
-    frozen: pd.DataFrame
-    finetune: pd.DataFrame
+    proxy: pd.DataFrame
+    gt: pd.DataFrame
     regret: pd.DataFrame | None
     diverged: dict[str, bool]
-    finetune_skipped: dict[str, bool]
+    gt_skipped: dict[str, bool]
     proxy_label: str = "frozen"
     truth_label: str = "finetune"
 
     @property
     def models(self) -> list[str]:
-        """Models in frozen-CSV row order (the stable tie-break basis for the proxy rank)."""
-        return list(self.frozen["model"])
+        """Models in proxy-CSV row order (the stable tie-break basis for the proxy rank)."""
+        return list(self.proxy["model"])
 
 
 @dataclass
@@ -240,7 +240,7 @@ def load_triple(tf: _TripleFiles) -> Triple:
     Accepts any recognised proxy/truth kind pair (see :data:`_ROLE_PAIRS`): the standard
     ``frozen`` + ``finetune`` pair for a ``full_eval`` run, or ``r1`` + ``r3`` for a
     frozen repeat-count comparison. Internally the DataFrames are always stored as
-    ``.frozen`` (proxy) and ``.finetune`` (truth); display labels come from
+    ``.proxy`` (cheap pass) and ``.gt`` (truth); display labels come from
     ``Triple.proxy_label`` / ``Triple.truth_label``.
 
     Use :func:`discover_triples` ahead of this; callers that tolerate missing heads should
@@ -257,25 +257,25 @@ def load_triple(tf: _TripleFiles) -> Triple:
         )
     proxy_kind, truth_kind, proxy_label, truth_label = role
 
-    frozen = pd.read_csv(tf.paths[proxy_kind])
-    finetune = pd.read_csv(tf.paths[truth_kind])
+    proxy_df = pd.read_csv(tf.paths[proxy_kind])
+    gt_df = pd.read_csv(tf.paths[truth_kind])
     regret = pd.read_csv(tf.paths["regret"]) if "regret" in tf.paths else None
 
-    _crosscheck_head_type(frozen, tf.head, proxy_kind)
-    _crosscheck_head_type(finetune, tf.head, truth_kind)
+    _crosscheck_head_type(proxy_df, tf.head, proxy_kind)
+    _crosscheck_head_type(gt_df, tf.head, truth_kind)
 
-    # finetune_skipped detects model2vec fallbacks via inference_s > 0; that signal only
+    # gt_skipped detects model2vec fallbacks via inference_s > 0; that signal only
     # applies to a real finetune pass (inference fused → 0).  For frozen-vs-frozen both
     # passes always have inference_s > 0, so the flag is meaningless — leave it empty.
-    skipped = _flag_finetune_skipped(finetune) if truth_kind == "finetune" else {}
+    skipped = _flag_finetune_skipped(gt_df) if truth_kind == "finetune" else {}
     return Triple(
         run_id=tf.run_id,
         head=tf.head,
-        frozen=frozen,
-        finetune=finetune,
+        proxy=proxy_df,
+        gt=gt_df,
         regret=regret,
-        diverged=_flag_diverged(finetune, skipped),
-        finetune_skipped=skipped,
+        diverged=_flag_diverged(gt_df, skipped),
+        gt_skipped=skipped,
         proxy_label=proxy_label,
         truth_label=truth_label,
     )

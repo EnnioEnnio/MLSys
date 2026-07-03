@@ -50,17 +50,17 @@ class Comparison:
 
     dir: Path
     png: dict[str, Path]
-    frozen_matrix: pd.DataFrame
-    finetune_matrix: pd.DataFrame
+    proxy_matrix: pd.DataFrame
+    gt_matrix: pd.DataFrame
     per_head: pd.DataFrame
     diverged: pd.DataFrame
     cost: pd.DataFrame
     # § 7 tables
-    frozen_distribution: pd.DataFrame
+    proxy_distribution: pd.DataFrame
     head_gain: pd.DataFrame
     epochs: pd.DataFrame
     head_rank_agreement: pd.DataFrame
-    frozen_timing_share: pd.DataFrame
+    proxy_timing_share: pd.DataFrame
     value_frontier: pd.DataFrame
 
 
@@ -75,7 +75,7 @@ def _ensure_regret_csv(tf: loader._TripleFiles, triple: Triple) -> None:
     proxy_path = tf.paths[proxy_kind]
     regret_name = proxy_path.name.replace(f"_{proxy_kind}.csv", "_regret.csv")
     regret_path = proxy_path.with_name(regret_name)
-    curve = recompute_regret(triple.frozen, triple.finetune)
+    curve = recompute_regret(triple.proxy, triple.gt)
     curve.to_csv(regret_path, index=False)
     triple.regret = curve
     tf.paths["regret"] = regret_path
@@ -141,14 +141,14 @@ def _build_per_head(triple: Triple, out_dir: Path) -> PerHead:
     summary = tables.per_triple_summary(triple)
 
     png = {
-        "r2_frozen_vs_finetune": plots.plot_r2_frozen_vs_finetune(triple, head_dir),
+        "r2_proxy_vs_gt": plots.plot_r2_proxy_vs_gt(triple, head_dir),
         "proxy_scatter": plots.plot_proxy_scatter(triple, head_dir),
         "r2_delta": plots.plot_r2_delta(triple, head_dir),
         "regret_curve": plots.plot_regret_curve(triple, head_dir),
-        "finetune_spearman_vs_r2": plots.plot_finetune_spearman_vs_r2(triple, head_dir),
+        "gt_spearman_vs_r2": plots.plot_gt_spearman_vs_r2(triple, head_dir),
         "timing_stacked": plots.plot_timing_stacked(triple, head_dir),
         "peak_gpu_mem": plots.plot_peak_gpu_mem(triple, head_dir),
-        "frozen_time_breakdown": plots.plot_frozen_time_breakdown(triple, head_dir),
+        "proxy_time_breakdown": plots.plot_proxy_time_breakdown(triple, head_dir),
     }
     return PerHead(table=table, summary=summary, png=png, dir=head_dir)
 
@@ -158,59 +158,59 @@ def _build_comparison(triples: list[Triple], out_dir: Path) -> Comparison:
     comp_dir = out_dir / "comparison"
     comp_dir.mkdir(parents=True, exist_ok=True)
 
-    frozen_matrix = tables.head_model_r2_matrix(triples, "frozen")
-    finetune_matrix = tables.head_model_r2_matrix(triples, "finetune")
+    proxy_matrix = tables.head_model_r2_matrix(triples, "proxy")
+    gt_matrix = tables.head_model_r2_matrix(triples, "gt")
     per_head = tables.per_head_summary_table(triples)
     diverged = tables.diverged_models_table(triples)
     cost = tables.cost_table(triples)
-    tables.write_table(frozen_matrix, comp_dir / "frozen_r2_matrix")
-    tables.write_table(finetune_matrix, comp_dir / "finetune_r2_matrix")
+    tables.write_table(proxy_matrix, comp_dir / "proxy_r2_matrix")
+    tables.write_table(gt_matrix, comp_dir / "gt_r2_matrix")
     tables.write_table(per_head, comp_dir / "per_head_summary")
     tables.write_table(diverged, comp_dir / "diverged_models")
     tables.write_table(cost, comp_dir / "cost_table")
 
     # §7 tables
-    frozen_distribution = tables.frozen_distribution_table(triples)
+    proxy_distribution = tables.frozen_distribution_table(triples)
     head_gain = tables.head_gain_table(triples)
     epochs = tables.epochs_table(triples)
     head_rank_agreement = tables.head_rank_agreement_matrix(triples)
-    frozen_timing_share = tables.frozen_timing_share_table(triples)
+    proxy_timing_share = tables.frozen_timing_share_table(triples)
     value_frontier = tables.value_frontier_table(triples)
-    tables.write_table(frozen_distribution, comp_dir / "frozen_distribution")
+    tables.write_table(proxy_distribution, comp_dir / "proxy_distribution")
     tables.write_table(head_gain, comp_dir / "head_gain")
     tables.write_table(epochs, comp_dir / "epochs_table")
     tables.write_table(head_rank_agreement, comp_dir / "head_rank_agreement")
-    tables.write_table(frozen_timing_share, comp_dir / "frozen_timing_share")
+    tables.write_table(proxy_timing_share, comp_dir / "proxy_timing_share")
     tables.write_table(value_frontier, comp_dir / "value_frontier")
 
     png = {
         "regret_curves_by_head": plots.plot_regret_curves_by_head(triples, comp_dir),
         "regret_at1_vs_head": plots.plot_regret_at1_vs_head(triples, comp_dir),
         "best_r2_vs_head": plots.plot_best_r2_vs_head(triples, comp_dir),
-        "heatmap_frozen_r2": plots.plot_heatmap_frozen_r2(triples, comp_dir),
-        "heatmap_finetune_r2": plots.plot_heatmap_finetune_r2(triples, comp_dir),
+        "heatmap_proxy_r2": plots.plot_heatmap_proxy_r2(triples, comp_dir),
+        "heatmap_gt_r2": plots.plot_heatmap_gt_r2(triples, comp_dir),
         "divergence_map": plots.plot_divergence_map(triples, comp_dir),
         "proxy_rank_spearman_vs_head": plots.plot_proxy_rank_spearman_vs_head(triples, comp_dir),
         "cost_vs_head": plots.plot_cost_vs_head(triples, comp_dir),
         # §7 plots
         "epochs_vs_head": plots.plot_epochs_vs_head(triples, comp_dir),
         "head_rank_agreement": plots.plot_head_rank_agreement(triples, comp_dir),
-        "frozen_timing_share": plots.plot_frozen_timing_share(triples, comp_dir),
+        "proxy_timing_share": plots.plot_proxy_timing_share(triples, comp_dir),
         "value_frontier": plots.plot_value_frontier(triples, comp_dir),
     }
     return Comparison(
         dir=comp_dir,
         png=png,
-        frozen_matrix=frozen_matrix,
-        finetune_matrix=finetune_matrix,
+        proxy_matrix=proxy_matrix,
+        gt_matrix=gt_matrix,
         per_head=per_head,
         diverged=diverged,
         cost=cost,
-        frozen_distribution=frozen_distribution,
+        proxy_distribution=proxy_distribution,
         head_gain=head_gain,
         epochs=epochs,
         head_rank_agreement=head_rank_agreement,
-        frozen_timing_share=frozen_timing_share,
+        proxy_timing_share=proxy_timing_share,
         value_frontier=value_frontier,
     )
 
@@ -229,7 +229,7 @@ def _assemble_summary(
 ) -> str:
     md = tables.df_to_markdown
     heads = [t.head for t in triples]
-    dataset = str(triples[0].frozen["dataset"].iloc[0]) if "dataset" in triples[0].frozen else "?"
+    dataset = str(triples[0].proxy["dataset"].iloc[0]) if "dataset" in triples[0].proxy else "?"
     pool_size = len(triples[0].models)
 
     proxy_label = triples[0].proxy_label if triples else "proxy"
@@ -250,10 +250,10 @@ def _assemble_summary(
     parts.append(f"\n## 1. {proxy_label} results (cheap proxy)\n")
     for t in triples:
         ph = per_head[t.head]
-        cols = ["model", "frozen_r2", "frozen_mse", "frozen_mae", "frozen_spearman"]
+        cols = ["model", "proxy_r2", "proxy_mse", "proxy_mae", "proxy_spearman"]
         parts.append(f"### Head {t.head}\n")
         parts.append(md(ph.table[cols]))
-        parts.append(_img(ph.png["r2_frozen_vs_finetune"], out_dir))
+        parts.append(_img(ph.png["r2_proxy_vs_gt"], out_dir))
         parts.append(_img(ph.png["proxy_scatter"], out_dir))
 
     # 2. truth pass results (with divergence / spearman-vs-r2 story)
@@ -273,25 +273,25 @@ def _assemble_summary(
         ph = per_head[t.head]
         cols = [
             "model",
-            "finetune_r2",
-            "finetune_spearman",
+            "gt_r2",
+            "gt_spearman",
             "diverged",
-            "finetune_skipped",
-            "finetune_epochs",
+            "gt_skipped",
+            "gt_epochs",
         ]
         parts.append(f"### Head {t.head}\n")
         parts.append(md(ph.table[cols]))
-        parts.append(_img(ph.png["finetune_spearman_vs_r2"], out_dir))
+        parts.append(_img(ph.png["gt_spearman_vs_r2"], out_dir))
 
     # 3. proxy vs truth comparison
     parts.append(f"\n## 3. {proxy_label} vs {truth_label} comparison\n")
     parts.append(f"### {proxy_label} r² (model x head)\n")
-    parts.append(md(comparison.frozen_matrix))
+    parts.append(md(comparison.proxy_matrix))
     parts.append(f"### {truth_label} r² (model x head)\n")
-    parts.append(md(comparison.finetune_matrix))
+    parts.append(md(comparison.gt_matrix))
     cpng = comparison.png
-    parts.append(_img(cpng["heatmap_frozen_r2"], out_dir))
-    parts.append(_img(cpng["heatmap_finetune_r2"], out_dir))
+    parts.append(_img(cpng["heatmap_proxy_r2"], out_dir))
+    parts.append(_img(cpng["heatmap_gt_r2"], out_dir))
     parts.append(_img(cpng["divergence_map"], out_dir))
     parts.append(_img(cpng["best_r2_vs_head"], out_dir))
     for t in triples:
@@ -325,7 +325,7 @@ def _assemble_summary(
         parts.append(f"### Head {t.head}\n")
         parts.append(_img(ph.png["timing_stacked"], out_dir))
         parts.append(_img(ph.png["peak_gpu_mem"], out_dir))
-        parts.append(_img(ph.png["frozen_time_breakdown"], out_dir))
+        parts.append(_img(ph.png["proxy_time_breakdown"], out_dir))
 
     # 6. synthesis stubs (templated numbers; prose for Claude)
     parts.append(_synthesis_section(triples, per_head, comparison, proxy_label, truth_label))
@@ -349,15 +349,15 @@ def _section7(
     lines: list[str] = ["\n## 7. Distribution, ranking stability & cost\n"]
 
     # 7.1 Spread-collapse (#1)
-    lines.append("### 7.1 Frozen r² spread per head\n")
-    lines.append(md(comparison.frozen_distribution))
-    dist = comparison.frozen_distribution
+    lines.append("### 7.1 Proxy r² spread per head\n")
+    lines.append(md(comparison.proxy_distribution))
+    dist = comparison.proxy_distribution
     if not dist.empty:
-        std_vals = dist["std_frozen_r2"].tolist()
+        std_vals = dist["std_proxy_r2"].tolist()
         std_str = " → ".join(f"{v:.2f}" for v in std_vals)
         n_neg_total = int(dist["n_negative"].sum())
         lines.append(
-            f"- **std_frozen_r2 across heads:** {std_str}  <!-- prose: spread-collapse story -->"
+            f"- **std_proxy_r2 across heads:** {std_str}  <!-- prose: spread-collapse story -->"
         )
         lines.append(
             f"- **total n_negative frozen r² (all heads):** {n_neg_total}  <!-- prose: -->\n"
@@ -378,13 +378,13 @@ def _section7(
     lines.append(md(comparison.epochs))
     lines.append(_img(cpng["epochs_vs_head"], out_dir))
     ep = comparison.epochs
-    if not ep.empty and "n_frozen_at_cap" in ep.columns:
+    if not ep.empty and "n_proxy_at_cap" in ep.columns:
         at_cap_str = ", ".join(
-            f"{row['head']}={int(row['n_frozen_at_cap'])}/{len(triples[0].models)}"
+            f"{row['head']}={int(row['n_proxy_at_cap'])}/{len(triples[0].models)}"
             for _, row in ep.iterrows()
         )
         lines.append(
-            f"- **n_frozen_at_cap per head:** {at_cap_str}  <!-- prose: early-stop story -->\n"
+            f"- **n_proxy_at_cap per head:** {at_cap_str}  <!-- prose: early-stop story -->\n"
         )
 
     # 7.4 Head x head rank agreement (#4)
@@ -403,11 +403,11 @@ def _section7(
             f"- **min off-diagonal rho:** {min_rho:.2f}  <!-- prose: ranking stability -->\n"
         )
 
-    # 7.5 Frozen timing substep share (#5)
-    lines.append("### 7.5 Frozen timing substep share\n")
-    lines.append(md(comparison.frozen_timing_share))
-    lines.append(_img(cpng["frozen_timing_share"], out_dir))
-    fts = comparison.frozen_timing_share
+    # 7.5 Proxy timing substep share (#5)
+    lines.append("### 7.5 Proxy timing substep share\n")
+    lines.append(md(comparison.proxy_timing_share))
+    lines.append(_img(cpng["proxy_timing_share"], out_dir))
+    fts = comparison.proxy_timing_share
     if not fts.empty and "inference_pct" in fts.columns:
         inf_min = float(fts["inference_pct"].min())
         inf_max = float(fts["inference_pct"].max())
@@ -448,12 +448,12 @@ def _synthesis_section(
         lines.append(f"- **normalized regret@1:** {s.normalized_regret_at_1:.4f}  <!-- prose: -->")
         lines.append(f"- **budget-to-zero:** {s.budget_to_zero}  <!-- prose: -->")
         lines.append(
-            f"- **best {proxy_label} r²:** {s.best_frozen_r2:.4f} "
-            f"({s.best_frozen_model})  <!-- prose: -->"
+            f"- **best {proxy_label} r²:** {s.best_proxy_r2:.4f} "
+            f"({s.best_proxy_model})  <!-- prose: -->"
         )
         lines.append(
-            f"- **best {truth_label} r²:** {s.best_finetune_r2:.4f} "
-            f"({s.best_finetune_model})  <!-- prose: -->"
+            f"- **best {truth_label} r²:** {s.best_gt_r2:.4f} "
+            f"({s.best_gt_model})  <!-- prose: -->"
         )
         lines.append(f"- **diverged models:** {s.n_diverged}  <!-- prose: -->")
         lines.append(f"- **proxy rank Spearman:** {s.rank_spearman:.4f}  <!-- prose: -->\n")
@@ -478,12 +478,12 @@ def _synthesis_section(
     lines.append("### RQ2 — where do the bottlenecks shift?\n")
     widest = triples[-1]
     ph_table = per_head[widest.head].table
-    best_model = per_head[widest.head].summary.best_finetune_model
+    best_model = per_head[widest.head].summary.best_gt_model
     row = ph_table[ph_table["model"] == best_model].iloc[0]
-    fz_cost = float(row["frozen_inference_s"]) + float(row["frozen_train_head_s"])
-    ft_cost = float(row["finetune_train_head_s"])
-    mem_fz = float(row["frozen_peak_gpu_mem_mb"])
-    mem_ft = float(row["finetune_peak_gpu_mem_mb"])
+    fz_cost = float(row["proxy_inference_s"]) + float(row["proxy_train_head_s"])
+    ft_cost = float(row["gt_train_head_s"])
+    mem_fz = float(row["proxy_peak_gpu_mem_mb"])
+    mem_ft = float(row["gt_peak_gpu_mem_mb"])
     cost_ratio = f"{ft_cost / fz_cost:.1f}x" if fz_cost > 0 else "n/a"
     mem_ratio = f"{mem_ft / mem_fz:.1f}x" if mem_fz > 0 else "n/a"
     lines.append(f"For the best model (**{best_model}**, head {widest.head}):\n")
@@ -498,11 +498,11 @@ def _synthesis_section(
 
     # Encode (inference_s) is the *backbone-specific* cost — head fitting is the same head
     # everywhere — so the backbone spread reads off it, not off total_s (which dilutes).
-    encode = ph_table[["model", "frozen_inference_s"]]
-    cheapest = encode.loc[encode["frozen_inference_s"].idxmin()]
-    priciest = encode.loc[encode["frozen_inference_s"].idxmax()]
-    cheap_s = float(cheapest["frozen_inference_s"])
-    pricey_s = float(priciest["frozen_inference_s"])
+    encode = ph_table[["model", "proxy_inference_s"]]
+    cheapest = encode.loc[encode["proxy_inference_s"].idxmin()]
+    priciest = encode.loc[encode["proxy_inference_s"].idxmax()]
+    cheap_s = float(cheapest["proxy_inference_s"])
+    pricey_s = float(priciest["proxy_inference_s"])
     spread_str = f"{pricey_s / cheap_s:.1f}x" if cheap_s > 0 else "n/a"
     lines.append(
         f"- **backbone encode-cost spread (head {widest.head}, {proxy_label} inference_s):** "

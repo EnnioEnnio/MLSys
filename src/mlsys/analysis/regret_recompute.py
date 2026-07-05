@@ -33,7 +33,7 @@ def triple_regret_df(triple: Triple) -> pd.DataFrame:
     """
     if triple.regret is not None:
         return triple.regret
-    return recompute_regret(triple.proxy, triple.gt)
+    return recompute_regret(triple.proxy, triple.reference)
 
 
 def _r2_map(frame: pd.DataFrame) -> dict[str, float]:

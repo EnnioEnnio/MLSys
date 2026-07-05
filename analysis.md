@@ -134,14 +134,14 @@ adapting model search to regression; RQ2 = how bottlenecks shift.
 
 | File | Shows | Serves |
 | --- | --- | --- |
-| `tables.csv` / `tables.md` | per-model proxy/gt r²,mse,mae,spearman, Δ, skipped/diverged flags, epochs, costs | RQ1 + RQ2 |
-| `r2_proxy_vs_gt.png` | grouped bars, proxy vs gt r² per model | §1/§2 |
-| `proxy_scatter.png` | proxy-r² vs gt-r² with y=x; skipped/diverged coloured | RQ1 |
-| `r2_delta.png` | diverging bars of Δ = gt − proxy r² | §3 |
+| `tables.csv` / `tables.md` | per-model proxy/reference r²,mse,mae,spearman, Δ, skipped/diverged flags, epochs, costs | RQ1 + RQ2 |
+| `r2_proxy_vs_gt.png` | grouped bars, proxy vs reference r² per model | §1/§2 |
+| `proxy_scatter.png` | proxy-r² vs reference-r² with y=x; skipped/diverged coloured | RQ1 |
+| `r2_delta.png` | diverging bars of Δ = reference − proxy r² | §3 |
 | `regret_curve.png` | regret + normalized_regret vs budget B | §4 |
-| `gt_spearman_vs_r2.png` | gt Spearman vs r² — "rank kept, scale broken" | §2 / RQ1 |
-| `timing_stacked.png` | stacked substep timing, proxy vs gt side-by-side | RQ2 (R1) |
-| `peak_gpu_mem.png` | peak GPU memory, proxy vs gt | RQ2 (R2) |
+| `ref_spearman_vs_r2.png` | reference Spearman vs r² — "rank kept, scale broken" | §2 / RQ1 |
+| `timing_stacked.png` | stacked substep timing, proxy vs reference side-by-side | RQ2 (R1) |
+| `peak_gpu_mem.png` | peak GPU memory, proxy vs reference | RQ2 (R2) |
 | `proxy_time_breakdown.png` | proxy `inference_s` vs `train_head_s` share | RQ2 (R3) |
 
 ### Comparison (`analysis/comparison/`)
@@ -149,9 +149,9 @@ adapting model search to regression; RQ2 = how bottlenecks shift.
 | File | Shows | Serves |
 | --- | --- | --- |
 | `per_head_summary.csv/.md` | one row per head: best r², regret@1, budget-to-zero, rank-ρ, counts | all |
-| `proxy_r2_matrix.*` / `gt_r2_matrix.*` | model × head r² tables | §3 |
-| `diverged_models.*` | every diverged model's proxy→gt r² + gt ρ per head | §6 / RQ1 |
-| `cost_table.*` | per-(head,model) proxy total, gt total, peak mem, epochs | RQ2 |
+| `proxy_r2_matrix.*` / `reference_r2_matrix.*` | model × head r² tables | §3 |
+| `diverged_models.*` | every diverged model's proxy→reference r² + reference ρ per head | §6 / RQ1 |
+| `cost_table.*` | per-(head,model) proxy total, reference total, peak mem, epochs | RQ2 |
 | `proxy_distribution.*` | per-head proxy r² mean/std/min/max/n_negative — spread-collapse story | §7.1 |
 | `head_gain.*` | per-model Δ proxy r² narrowest→widest head — biggest gainers | §7.2 |
 | `epochs_table.*` | per-head mean proxy/gt epochs, n-at-cap, cap | §7.3 |
@@ -160,11 +160,11 @@ adapting model search to regression; RQ2 = how bottlenecks shift.
 | `value_frontier.*` | proxy inference_s vs r² at the widest head | §7.6 |
 | `regret_curves_by_head.png` | overlaid regret curves, one line per head | §4 |
 | `regret_at1_vs_head.png` | regret@1 / AUC / budget-to-zero vs head width | §4 |
-| `best_r2_vs_head.png` | best proxy & best gt r² vs head width | §3 |
-| `heatmap_proxy_r2.png` / `heatmap_gt_r2.png` | model × head r² heatmaps | §3 |
-| `divergence_map.png` | binary model × head map of `diverged` (gt r² < 0) | RQ1 |
-| `proxy_rank_spearman_vs_head.png` | Spearman(proxy rank, gt rank) per head | RQ1 |
-| `cost_vs_head.png` | mean gt `train_head_s` & `peak_gpu_mem_mb` vs head width | RQ2 (R4) |
+| `best_r2_vs_head.png` | best proxy & best reference r² vs head width | §3 |
+| `heatmap_proxy_r2.png` / `heatmap_ref_r2.png` | model × head r² heatmaps | §3 |
+| `divergence_map.png` | binary model × head map of `diverged` (reference r² < 0) | RQ1 |
+| `proxy_rank_spearman_vs_head.png` | Spearman(proxy rank, reference rank) per head | RQ1 |
+| `cost_vs_head.png` | mean reference `train_head_s` & `peak_gpu_mem_mb` vs head width | RQ2 (R4) |
 | `epochs_vs_head.png` | mean proxy vs gt epochs per head; annotated proxy cap | §7.3 |
 | `head_rank_agreement.png` | heatmap of head × head Spearman ρ matrix | §7.4 |
 | `proxy_timing_share.png` | horizontal 100%-stacked bar: substep % share per head | §7.5 |

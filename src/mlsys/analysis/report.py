@@ -51,7 +51,7 @@ class Comparison:
     dir: Path
     png: dict[str, Path]
     proxy_matrix: pd.DataFrame
-    gt_matrix: pd.DataFrame
+    reference_matrix: pd.DataFrame
     per_head: pd.DataFrame
     diverged: pd.DataFrame
     cost: pd.DataFrame
@@ -65,17 +65,21 @@ class Comparison:
 
 
 def _ensure_regret_csv(tf: loader._TripleFiles, triple: Triple) -> None:
-    """Crash recovery: if the triple had no ``*_regret.csv``, recompute + write it back."""
+    """Crash recovery: if the triple had no ``*_regret.csv``, recompute + write it back.
+
+    Skipped for pairs that don't support regret (e.g. frozen repeat comparisons): regret is
+    only meaningful for genuine proxy-vs-finetune pairs and would be all-zero by construction
+    for same-strategy pairs.
+    """
+    if not triple.role_pair.supports_regret:
+        return
     if "regret" in tf.paths:
         return
-    role = loader.resolve_role_pair(tf.paths)
-    if role is None:
-        return
-    proxy_kind = role[0]
-    proxy_path = tf.paths[proxy_kind]
-    regret_name = proxy_path.name.replace(f"_{proxy_kind}.csv", "_regret.csv")
+    role = triple.role_pair
+    proxy_path = tf.paths[role.proxy_kind]
+    regret_name = proxy_path.name.replace(f"_{role.proxy_kind}.csv", "_regret.csv")
     regret_path = proxy_path.with_name(regret_name)
-    curve = recompute_regret(triple.proxy, triple.gt)
+    curve = recompute_regret(triple.proxy, triple.reference)
     curve.to_csv(regret_path, index=False)
     triple.regret = curve
     tf.paths["regret"] = regret_path
@@ -98,7 +102,7 @@ def _load_surviving(experiment_dir: Path) -> tuple[list[Triple], list[str]]:
     for tf in loader.discover_triples(experiment_dir):
         if loader.resolve_role_pair(tf.paths) is None:
             msg = (
-                f"{tf.head} (run {tf.run_id}): no recognised proxy/truth pair "
+                f"{tf.head} (run {tf.run_id}): no recognised proxy/reference pair "
                 f"in kinds {sorted(tf.paths)}"
             )
             log.warning("skipping head — %s", msg)
@@ -145,7 +149,7 @@ def _build_per_head(triple: Triple, out_dir: Path) -> PerHead:
         "proxy_scatter": plots.plot_proxy_scatter(triple, head_dir),
         "r2_delta": plots.plot_r2_delta(triple, head_dir),
         "regret_curve": plots.plot_regret_curve(triple, head_dir),
-        "gt_spearman_vs_r2": plots.plot_gt_spearman_vs_r2(triple, head_dir),
+        "ref_spearman_vs_r2": plots.plot_ref_spearman_vs_r2(triple, head_dir),
         "timing_stacked": plots.plot_timing_stacked(triple, head_dir),
         "peak_gpu_mem": plots.plot_peak_gpu_mem(triple, head_dir),
         "proxy_time_breakdown": plots.plot_proxy_time_breakdown(triple, head_dir),
@@ -159,12 +163,12 @@ def _build_comparison(triples: list[Triple], out_dir: Path) -> Comparison:
     comp_dir.mkdir(parents=True, exist_ok=True)
 
     proxy_matrix = tables.head_model_r2_matrix(triples, "proxy")
-    gt_matrix = tables.head_model_r2_matrix(triples, "gt")
+    reference_matrix = tables.head_model_r2_matrix(triples, "reference")
     per_head = tables.per_head_summary_table(triples)
     diverged = tables.diverged_models_table(triples)
     cost = tables.cost_table(triples)
     tables.write_table(proxy_matrix, comp_dir / "proxy_r2_matrix")
-    tables.write_table(gt_matrix, comp_dir / "gt_r2_matrix")
+    tables.write_table(reference_matrix, comp_dir / "reference_r2_matrix")
     tables.write_table(per_head, comp_dir / "per_head_summary")
     tables.write_table(diverged, comp_dir / "diverged_models")
     tables.write_table(cost, comp_dir / "cost_table")
@@ -188,7 +192,7 @@ def _build_comparison(triples: list[Triple], out_dir: Path) -> Comparison:
         "regret_at1_vs_head": plots.plot_regret_at1_vs_head(triples, comp_dir),
         "best_r2_vs_head": plots.plot_best_r2_vs_head(triples, comp_dir),
         "heatmap_proxy_r2": plots.plot_heatmap_proxy_r2(triples, comp_dir),
-        "heatmap_gt_r2": plots.plot_heatmap_gt_r2(triples, comp_dir),
+        "heatmap_ref_r2": plots.plot_heatmap_ref_r2(triples, comp_dir),
         "divergence_map": plots.plot_divergence_map(triples, comp_dir),
         "proxy_rank_spearman_vs_head": plots.plot_proxy_rank_spearman_vs_head(triples, comp_dir),
         "cost_vs_head": plots.plot_cost_vs_head(triples, comp_dir),
@@ -202,7 +206,7 @@ def _build_comparison(triples: list[Triple], out_dir: Path) -> Comparison:
         dir=comp_dir,
         png=png,
         proxy_matrix=proxy_matrix,
-        gt_matrix=gt_matrix,
+        reference_matrix=reference_matrix,
         per_head=per_head,
         diverged=diverged,
         cost=cost,
@@ -233,7 +237,7 @@ def _assemble_summary(
     pool_size = len(triples[0].models)
 
     proxy_label = triples[0].proxy_label if triples else "proxy"
-    truth_label = triples[0].truth_label if triples else "truth"
+    reference_label = triples[0].reference_label if triples else "reference"
 
     parts: list[str] = [f"# Analysis — {experiment_dir.name}\n"]
 
@@ -244,7 +248,7 @@ def _assemble_summary(
     parts.append(f"- **heads found:** {', '.join(heads)}\n")
     parts.append(f"- **heads skipped:** {'; '.join(skipped) if skipped else 'none'}\n")
     parts.append(f"- **proxy pass:** {proxy_label}\n")
-    parts.append(f"- **truth pass:** {truth_label}\n")
+    parts.append(f"- **reference pass:** {reference_label}\n")
 
     # 1. proxy pass results
     parts.append(f"\n## 1. {proxy_label} results (cheap proxy)\n")
@@ -256,59 +260,62 @@ def _assemble_summary(
         parts.append(_img(ph.png["r2_proxy_vs_gt"], out_dir))
         parts.append(_img(ph.png["proxy_scatter"], out_dir))
 
-    # 2. truth pass results (with divergence / spearman-vs-r2 story)
+    # 2. reference pass results (with divergence / spearman-vs-r2 story)
     n_diverged_any = sum(1 for t in triples for d in t.diverged.values() if d)
     diverged_guardrail = (
-        f"> **Caveat:** {n_diverged_any} model/head combinations have {truth_label} r² < 0 "
-        f"(training instability — backbone diverged). Their {truth_label} ground truth and the "
+        f"> **Caveat:** {n_diverged_any} model/head combinations have {reference_label} r² < 0 "
+        f"(training instability — backbone diverged). Their {reference_label} ground truth and the "
         "regret derived from it are unreliable; caveat accordingly when interpreting regret "
         "numbers that involve these models.\n"
         if n_diverged_any > 0
         else ""
     )
-    parts.append(f"\n## 2. {truth_label} results (ground truth)\n")
+    gt_qualifier = " (ground truth)" if reference_label == "finetune" else ""
+    parts.append(f"\n## 2. {reference_label} results{gt_qualifier}\n")
     if diverged_guardrail:
         parts.append(diverged_guardrail)
     for t in triples:
         ph = per_head[t.head]
         cols = [
             "model",
-            "gt_r2",
-            "gt_spearman",
+            "ref_r2",
+            "ref_spearman",
             "diverged",
-            "gt_skipped",
-            "gt_epochs",
+            "ref_skipped",
+            "ref_epochs",
         ]
         parts.append(f"### Head {t.head}\n")
         parts.append(md(ph.table[cols]))
-        parts.append(_img(ph.png["gt_spearman_vs_r2"], out_dir))
+        parts.append(_img(ph.png["ref_spearman_vs_r2"], out_dir))
 
-    # 3. proxy vs truth comparison
-    parts.append(f"\n## 3. {proxy_label} vs {truth_label} comparison\n")
+    # 3. proxy vs reference comparison
+    parts.append(f"\n## 3. {proxy_label} vs {reference_label} comparison\n")
     parts.append(f"### {proxy_label} r² (model x head)\n")
     parts.append(md(comparison.proxy_matrix))
-    parts.append(f"### {truth_label} r² (model x head)\n")
-    parts.append(md(comparison.gt_matrix))
+    parts.append(f"### {reference_label} r² (model x head)\n")
+    parts.append(md(comparison.reference_matrix))
     cpng = comparison.png
     parts.append(_img(cpng["heatmap_proxy_r2"], out_dir))
-    parts.append(_img(cpng["heatmap_gt_r2"], out_dir))
+    parts.append(_img(cpng["heatmap_ref_r2"], out_dir))
     parts.append(_img(cpng["divergence_map"], out_dir))
     parts.append(_img(cpng["best_r2_vs_head"], out_dir))
     for t in triples:
         parts.append(_img(per_head[t.head].png["r2_delta"], out_dir))
 
-    # 4. regret
-    parts.append("\n## 4. Regret\n")
-    parts.append(md(comparison.per_head))
-    parts.append(_img(cpng["regret_curves_by_head"], out_dir))
-    parts.append(_img(cpng["regret_at1_vs_head"], out_dir))
-    parts.append(_img(cpng["proxy_rank_spearman_vs_head"], out_dir))
-    for t in triples:
-        parts.append(_img(per_head[t.head].png["regret_curve"], out_dir))
+    # 4. regret (only for genuine proxy-vs-finetune pairs — same-strategy pairs produce
+    # all-zero regret by construction and the finding belongs in §7.4 rank agreement instead)
+    if any(t.role_pair.supports_regret for t in triples):
+        parts.append("\n## 4. Regret\n")
+        parts.append(md(comparison.per_head))
+        parts.append(_img(cpng["regret_curves_by_head"], out_dir))
+        parts.append(_img(cpng["regret_at1_vs_head"], out_dir))
+        parts.append(_img(cpng["proxy_rank_spearman_vs_head"], out_dir))
+        for t in triples:
+            parts.append(_img(per_head[t.head].png["regret_curve"], out_dir))
 
     # 5. RQ2 bottlenecks
     parts.append("\n## 5. RQ2 — bottlenecks (timing + GPU memory)\n")
-    if proxy_label == "frozen" and truth_label == "finetune":
+    if triples[0].role_pair.supports_regret:
         parts.append(
             "Frozen cost splits across `inference_s` (encode) + `train_head_s` (head fit); "
             "finetune fuses inference into the joint loop so `inference_s = 0` and "
@@ -316,7 +323,7 @@ def _assemble_summary(
         )
     else:
         parts.append(
-            f"Both passes ({proxy_label} and {truth_label}) split cost across the same "
+            f"Both passes ({proxy_label} and {reference_label}) split cost across the same "
             "substeps: `inference_s` (backbone encode) + `train_head_s` (head fit).\n"
         )
     parts.append(_img(cpng["cost_vs_head"], out_dir))
@@ -328,7 +335,7 @@ def _assemble_summary(
         parts.append(_img(ph.png["proxy_time_breakdown"], out_dir))
 
     # 6. synthesis stubs (templated numbers; prose for Claude)
-    parts.append(_synthesis_section(triples, per_head, comparison, proxy_label, truth_label))
+    parts.append(_synthesis_section(triples, per_head, comparison))
 
     # 7. distribution, ranking stability & cost (new gaps from the deck)
     parts.append(_section7(triples, comparison, out_dir))
@@ -434,9 +441,11 @@ def _synthesis_section(
     triples: list[Triple],
     per_head: dict[str, PerHead],
     comparison: Comparison,
-    proxy_label: str = "frozen",
-    truth_label: str = "finetune",
 ) -> str:
+    proxy_label = triples[0].proxy_label if triples else "proxy"
+    reference_label = triples[0].reference_label if triples else "reference"
+    supports_regret = triples[0].role_pair.supports_regret if triples else False
+
     lines: list[str] = ["\n## 6. Synthesis (numbers filled in; prose for the writer)\n"]
 
     # --- RQ1 ---
@@ -444,54 +453,62 @@ def _synthesis_section(
     for t in triples:
         s = per_head[t.head].summary
         lines.append(f"#### Head {t.head}\n")
-        lines.append(f"- **regret@1:** {s.regret_at_1:.4f}  <!-- prose: -->")
-        lines.append(f"- **normalized regret@1:** {s.normalized_regret_at_1:.4f}  <!-- prose: -->")
-        lines.append(f"- **budget-to-zero:** {s.budget_to_zero}  <!-- prose: -->")
+        if supports_regret:
+            lines.append(f"- **regret@1:** {s.regret_at_1:.4f}  <!-- prose: -->")
+            lines.append(
+                f"- **normalized regret@1:** {s.normalized_regret_at_1:.4f}  <!-- prose: -->"
+            )
+            lines.append(f"- **budget-to-zero:** {s.budget_to_zero}  <!-- prose: -->")
         lines.append(
             f"- **best {proxy_label} r²:** {s.best_proxy_r2:.4f} "
             f"({s.best_proxy_model})  <!-- prose: -->"
         )
         lines.append(
-            f"- **best {truth_label} r²:** {s.best_gt_r2:.4f} ({s.best_gt_model})  <!-- prose: -->"
+            f"- **best {reference_label} r²:** {s.best_ref_r2:.4f} "
+            f"({s.best_ref_model})  <!-- prose: -->"
         )
         lines.append(f"- **diverged models:** {s.n_diverged}  <!-- prose: -->")
         lines.append(f"- **proxy rank Spearman:** {s.rank_spearman:.4f}  <!-- prose: -->\n")
 
-    at1_by_head = ", ".join(f"{t.head}={per_head[t.head].summary.regret_at_1:.4f}" for t in triples)
-    first = per_head[triples[0].head].summary.regret_at_1
-    last = per_head[triples[-1].head].summary.regret_at_1
-    trend = "decreasing" if last < first else "increasing" if last > first else "flat"
-    lines.append(
-        f"- **regret@1 vs head width:** {at1_by_head} ({trend} with width)  <!-- prose: -->\n"
-    )
+    if supports_regret:
+        at1_by_head = ", ".join(
+            f"{t.head}={per_head[t.head].summary.regret_at_1:.4f}" for t in triples
+        )
+        first = per_head[triples[0].head].summary.regret_at_1
+        last = per_head[triples[-1].head].summary.regret_at_1
+        trend = "decreasing" if last < first else "increasing" if last > first else "flat"
+        lines.append(
+            f"- **regret@1 vs head width:** {at1_by_head} ({trend} with width)  <!-- prose: -->\n"
+        )
 
-    # --- diverged-model story table ---
+    # --- diverged-model story table (only meaningful for finetune reference passes) ---
     diverged = comparison.diverged
-    lines.append(f"#### Diverged-model story ({truth_label} r² < 0)\n")
-    if len(diverged):
-        lines.append(tables.df_to_markdown(diverged))
-    else:
-        lines.append("_No model diverged in any head._\n")
+    if supports_regret:
+        lines.append(f"#### Diverged-model story ({reference_label} r² < 0)\n")
+        if len(diverged):
+            lines.append(tables.df_to_markdown(diverged))
+        else:
+            lines.append("_No model diverged in any head._\n")
 
     # --- RQ2 ---
     lines.append("### RQ2 — where do the bottlenecks shift?\n")
     widest = triples[-1]
     ph_table = per_head[widest.head].table
-    best_model = per_head[widest.head].summary.best_gt_model
+    best_model = per_head[widest.head].summary.best_ref_model
     row = ph_table[ph_table["model"] == best_model].iloc[0]
     fz_cost = float(row["proxy_inference_s"]) + float(row["proxy_train_head_s"])
-    ft_cost = float(row["gt_train_head_s"])
+    ft_cost = float(row["ref_train_head_s"])
     mem_fz = float(row["proxy_peak_gpu_mem_mb"])
-    mem_ft = float(row["gt_peak_gpu_mem_mb"])
+    mem_ft = float(row["ref_peak_gpu_mem_mb"])
     cost_ratio = f"{ft_cost / fz_cost:.1f}x" if fz_cost > 0 else "n/a"
     mem_ratio = f"{mem_ft / mem_fz:.1f}x" if mem_fz > 0 else "n/a"
     lines.append(f"For the best model (**{best_model}**, head {widest.head}):\n")
     lines.append(
-        f"- **{truth_label}/{proxy_label} train cost ratio:** {cost_ratio} "
+        f"- **{reference_label}/{proxy_label} train cost ratio:** {cost_ratio} "
         f"({ft_cost:.0f}s vs {fz_cost:.0f}s)  <!-- prose: -->"
     )
     lines.append(
-        f"- **{truth_label}/{proxy_label} peak GPU mem ratio:** {mem_ratio} "
+        f"- **{reference_label}/{proxy_label} peak GPU mem ratio:** {mem_ratio} "
         f"({mem_ft:.0f}MB vs {mem_fz:.0f}MB)  <!-- prose: -->\n"
     )
 

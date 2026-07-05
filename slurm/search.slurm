@@ -68,9 +68,9 @@ pip install --no-cache-dir -e /workspace
 # Search strategy for this run (see header for options). Edit and re-submit to change.
 STRATEGY=full_eval
 
-# Number of head training repetitions (predictions averaged to reduce ranking variance).
-# frozen: use 3 for the ground-truth pass, 1 for the cheap proxy pass.
-# finetune / full_eval: leave at 1 (finetune runs once by convention).
+# Number of head training repetitions (predictions averaged to reduce ranking variance
+# on the frozen proxy pass). For full_eval the finetune pass is forced to head_repeats=1
+# internally (REGRET note 2), so this setting only affects the frozen proxy pass.
 HEAD_REPEATS=3
 
 echo "Running model search (strategy=$STRATEGY)..."

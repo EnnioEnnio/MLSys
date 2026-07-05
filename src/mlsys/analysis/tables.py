@@ -31,15 +31,15 @@ class TripleSummary:
     n_models: int
     best_proxy_model: str
     best_proxy_r2: float
-    best_gt_model: str
-    best_gt_r2: float
+    best_ref_model: str
+    best_ref_r2: float
     regret_at_1: float
     normalized_regret_at_1: float
     budget_to_zero: int
     regret_auc: float
     rank_spearman: float
     n_diverged: int
-    n_gt_skipped: int
+    n_ref_skipped: int
 
 
 def _fmt(value: object) -> str:
@@ -80,17 +80,17 @@ def write_table(df: pd.DataFrame, stem: str | Path) -> tuple[Path, Path]:
 
 
 def per_triple_table(triple: Triple) -> pd.DataFrame:
-    """Per-model proxy/gt quality (r²,mse,mae,spearman) + Δ, flags, and cost columns.
+    """Per-model proxy/reference quality (r²,mse,mae,spearman) + Δ, flags, and cost columns.
 
     Cost columns are labelled by pass: in the **proxy** pass cost splits across
-    ``inference_s`` (encode) and ``train_head_s`` (head fit); in the **gt** pass
-    inference is fused into the joint loop so ``gt_train_head_s`` is the end-to-end
+    ``inference_s`` (encode) and ``train_head_s`` (head fit); in the **reference** pass
+    inference is fused into the joint loop so ``ref_train_head_s`` is the end-to-end
     cost (``inference_s == 0``). See RQ2 framing in DATAPLAN / CLAUDE.md.
     """
     import pandas as pd
 
     fz = triple.proxy.set_index("model")
-    ft = triple.gt.set_index("model")
+    ft = triple.reference.set_index("model")
     rows = []
     for model in triple.models:
         fzr = fz.loc[model]
@@ -100,25 +100,25 @@ def per_triple_table(triple: Triple) -> pd.DataFrame:
             {
                 "model": model,
                 "proxy_r2": float(fzr["r2"]),
-                "gt_r2": ft_r2,
+                "ref_r2": ft_r2,
                 "delta_r2": ft_r2 - float(fzr["r2"]),
                 "proxy_mse": float(fzr["mse"]),
-                "gt_mse": float(ftr["mse"]) if ftr is not None else float("nan"),
+                "ref_mse": float(ftr["mse"]) if ftr is not None else float("nan"),
                 "proxy_mae": float(fzr["mae"]),
-                "gt_mae": float(ftr["mae"]) if ftr is not None else float("nan"),
+                "ref_mae": float(ftr["mae"]) if ftr is not None else float("nan"),
                 "proxy_spearman": float(fzr["spearman"]),
-                "gt_spearman": float(ftr["spearman"]) if ftr is not None else float("nan"),
-                "gt_skipped": triple.gt_skipped.get(model, False),
+                "ref_spearman": float(ftr["spearman"]) if ftr is not None else float("nan"),
+                "ref_skipped": triple.ref_skipped.get(model, False),
                 "diverged": triple.diverged.get(model, False),
                 "proxy_epochs": int(fzr["epochs_run"]) if "epochs_run" in fzr.index else 0,
-                "gt_epochs": int(ftr["epochs_run"]) if ftr is not None else 0,
+                "ref_epochs": int(ftr["epochs_run"]) if ftr is not None else 0,
                 "proxy_inference_s": float(fzr.get("inference_s", float("nan"))),
                 "proxy_train_head_s": float(fzr.get("train_head_s", float("nan"))),
-                "gt_train_head_s": (
+                "ref_train_head_s": (
                     float(ftr["train_head_s"]) if ftr is not None else float("nan")
                 ),
                 "proxy_peak_gpu_mem_mb": float(fzr.get("peak_gpu_mem_mb", float("nan"))),
-                "gt_peak_gpu_mem_mb": (
+                "ref_peak_gpu_mem_mb": (
                     float(ftr["peak_gpu_mem_mb"]) if ftr is not None else float("nan")
                 ),
             }
@@ -127,11 +127,11 @@ def per_triple_table(triple: Triple) -> pd.DataFrame:
 
 
 def rank_spearman(triple: Triple) -> float:
-    """Spearman(proxy r², gt r²) across models — does the cheap proxy rank like truth?"""
+    """Spearman(proxy r², reference r²) across models — does the cheap proxy rank like reference?"""
     from scipy.stats import spearmanr
 
     fz = triple.proxy.set_index("model")["r2"]
-    ft = triple.gt.set_index("model")["r2"]
+    ft = triple.reference.set_index("model")["r2"]
     common = [m for m in triple.models if m in ft.index]
     if len(common) < 2:
         return float("nan")
@@ -148,7 +148,7 @@ def budget_to_zero(regret_df: pd.DataFrame) -> int:
 def per_triple_summary(triple: Triple) -> TripleSummary:
     """Headline numbers for one head: best models, regret@1, budget-to-zero, proxy rank-rho."""
     fz = triple.proxy.set_index("model")["r2"]
-    ft = triple.gt.set_index("model")["r2"]
+    ft = triple.reference.set_index("model")["r2"]
     regret_df = triple_regret_df(triple)
     first = regret_df.iloc[0]
     return TripleSummary(
@@ -156,15 +156,15 @@ def per_triple_summary(triple: Triple) -> TripleSummary:
         n_models=len(triple.models),
         best_proxy_model=str(fz.idxmax()),
         best_proxy_r2=float(fz.max()),
-        best_gt_model=str(ft.idxmax()),
-        best_gt_r2=float(ft.max()),
+        best_ref_model=str(ft.idxmax()),
+        best_ref_r2=float(ft.max()),
         regret_at_1=float(first["regret"]),
         normalized_regret_at_1=float(first["normalized_regret"]),
         budget_to_zero=budget_to_zero(regret_df),
         regret_auc=float(regret_df["regret"].mean()),
         rank_spearman=rank_spearman(triple),
         n_diverged=int(sum(triple.diverged.values())),
-        n_gt_skipped=int(sum(triple.gt_skipped.values())),
+        n_ref_skipped=int(sum(triple.ref_skipped.values())),
     )
 
 
@@ -172,12 +172,12 @@ def per_triple_summary(triple: Triple) -> TripleSummary:
 
 
 def head_model_r2_matrix(triples: list[Triple], kind: str) -> pd.DataFrame:
-    """model x head r² matrix for ``kind`` in {"proxy","gt"}; index = model."""
+    """model x head r² matrix for ``kind`` in {"proxy","reference"}; index = model."""
     import pandas as pd
 
     series = {}
     for t in triples:
-        frame = t.proxy if kind == "proxy" else t.gt
+        frame = t.proxy if kind == "proxy" else t.reference
         series[t.head] = frame.set_index("model")["r2"]
     matrix = pd.DataFrame(series)
     matrix.index.name = "model"
@@ -185,7 +185,7 @@ def head_model_r2_matrix(triples: list[Triple], kind: str) -> pd.DataFrame:
 
 
 def divergence_matrix(triples: list[Triple]) -> pd.DataFrame:
-    """model x head boolean matrix of ``diverged`` (gt r² < 0); index = model."""
+    """model x head boolean matrix of ``diverged`` (reference r² < 0); index = model."""
     import pandas as pd
 
     series = {t.head: pd.Series(t.diverged) for t in triples}
@@ -202,7 +202,7 @@ def per_head_summary_table(triples: list[Triple]) -> pd.DataFrame:
 
 
 def diverged_models_table(triples: list[Triple]) -> pd.DataFrame:
-    """Every model that diverged in *any* head: proxy→gt r² + gt rho, per head.
+    """Every model that diverged in *any* head: proxy→reference r² + reference rho, per head.
 
     Pins the "rank preserved (high Spearman), scale broken (negative r²)" story into a
     templated table so the narrative is written over given numbers, not re-derived from plots.
@@ -215,14 +215,14 @@ def diverged_models_table(triples: list[Triple]) -> pd.DataFrame:
         row: dict[str, object] = {"model": model}
         for t in triples:
             fz = t.proxy.set_index("model")["r2"]
-            ftf = t.gt.set_index("model")
+            ftf = t.reference.set_index("model")
             row[f"{t.head}_proxy_r2"] = float(fz[model]) if model in fz.index else float("nan")
             if model in ftf.index:
-                row[f"{t.head}_gt_r2"] = float(ftf.loc[model, "r2"])
-                row[f"{t.head}_gt_spearman"] = float(ftf.loc[model, "spearman"])
+                row[f"{t.head}_ref_r2"] = float(ftf.loc[model, "r2"])
+                row[f"{t.head}_ref_spearman"] = float(ftf.loc[model, "spearman"])
             else:
-                row[f"{t.head}_gt_r2"] = float("nan")
-                row[f"{t.head}_gt_spearman"] = float("nan")
+                row[f"{t.head}_ref_r2"] = float("nan")
+                row[f"{t.head}_ref_spearman"] = float("nan")
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -277,7 +277,7 @@ def head_gain_table(triples: list[Triple]) -> pd.DataFrame:
 
 
 def epochs_table(triples: list[Triple]) -> pd.DataFrame:
-    """Per-head early-stopping summary (#3): mean proxy epochs, n at cap, cap, mean gt.
+    """Per-head early-stopping summary (#3): mean proxy epochs, n at cap, cap, mean reference.
 
     ``proxy_cap`` = global max of ``epochs_run`` across all proxy passes.
     ``n_proxy_at_cap`` = number of models that hit the cap (early stopping did not trigger).
@@ -292,7 +292,7 @@ def epochs_table(triples: list[Triple]) -> pd.DataFrame:
                 "mean_proxy_epochs",
                 "n_proxy_at_cap",
                 "proxy_cap",
-                "mean_gt_epochs",
+                "mean_ref_epochs",
             ]
         )
 
@@ -312,13 +312,15 @@ def epochs_table(triples: list[Triple]) -> pd.DataFrame:
                     "mean_proxy_epochs": float("nan"),
                     "n_proxy_at_cap": float("nan"),
                     "proxy_cap": proxy_cap,
-                    "mean_gt_epochs": float("nan"),
+                    "mean_ref_epochs": float("nan"),
                 }
             )
             continue
         proxy_epochs = t.proxy["epochs_run"].dropna().astype(float)
-        gt_epochs = (
-            t.gt["epochs_run"].dropna().astype(float) if "epochs_run" in t.gt.columns else None
+        ref_epochs = (
+            t.reference["epochs_run"].dropna().astype(float)
+            if "epochs_run" in t.reference.columns
+            else None
         )
         rows.append(
             {
@@ -330,8 +332,8 @@ def epochs_table(triples: list[Triple]) -> pd.DataFrame:
                     else float("nan")
                 ),
                 "proxy_cap": proxy_cap,
-                "mean_gt_epochs": (
-                    float(gt_epochs.mean()) if gt_epochs is not None else float("nan")
+                "mean_ref_epochs": (
+                    float(ref_epochs.mean()) if ref_epochs is not None else float("nan")
                 ),
             }
         )
@@ -415,13 +417,13 @@ def value_frontier_table(triples: list[Triple]) -> pd.DataFrame:
                 "model",
                 "proxy_inference_s",
                 "proxy_r2",
-                "gt_r2",
+                "ref_r2",
                 "proxy_peak_gpu_mem_mb",
             ]
         )
     widest = triples[-1]
     fz = widest.proxy.set_index("model")
-    ft = widest.gt.set_index("model")
+    ft = widest.reference.set_index("model")
     rows = []
     for model in widest.models:
         fzr = fz.loc[model]
@@ -430,7 +432,7 @@ def value_frontier_table(triples: list[Triple]) -> pd.DataFrame:
                 "model": model,
                 "proxy_inference_s": float(fzr.get("inference_s", float("nan"))),
                 "proxy_r2": float(fzr["r2"]),
-                "gt_r2": float(ft.loc[model, "r2"]) if model in ft.index else float("nan"),
+                "ref_r2": float(ft.loc[model, "r2"]) if model in ft.index else float("nan"),
                 "proxy_peak_gpu_mem_mb": float(fzr.get("peak_gpu_mem_mb", float("nan"))),
             }
         )
@@ -439,9 +441,9 @@ def value_frontier_table(triples: list[Triple]) -> pd.DataFrame:
 
 
 def cost_table(triples: list[Triple]) -> pd.DataFrame:
-    """Per-(head,model) RQ2 cost: proxy total, gt total, peak mem, epochs.
+    """Per-(head,model) RQ2 cost: proxy total, reference total, peak mem, epochs.
 
-    Proxy total = ``inference_s + train_head_s`` (encode + head fit); gt total =
+    Proxy total = ``inference_s + train_head_s`` (encode + head fit); reference total =
     ``train_head_s`` (inference fused in). Surfaces the ~10x model2vec-vs-transformer spread.
     """
     import pandas as pd
@@ -449,7 +451,7 @@ def cost_table(triples: list[Triple]) -> pd.DataFrame:
     rows = []
     for t in triples:
         fz = t.proxy.set_index("model")
-        ft = t.gt.set_index("model")
+        ft = t.reference.set_index("model")
         for model in t.models:
             fzr = fz.loc[model]
             ftr = ft.loc[model] if model in ft.index else None
@@ -459,13 +461,15 @@ def cost_table(triples: list[Triple]) -> pd.DataFrame:
                     "head": t.head,
                     "model": model,
                     "proxy_total_s": proxy_total,
-                    "gt_total_s": (float(ftr["train_head_s"]) if ftr is not None else float("nan")),
+                    "ref_total_s": (
+                        float(ftr["train_head_s"]) if ftr is not None else float("nan")
+                    ),
                     "proxy_peak_gpu_mem_mb": float(fzr.get("peak_gpu_mem_mb", float("nan"))),
-                    "gt_peak_gpu_mem_mb": (
+                    "ref_peak_gpu_mem_mb": (
                         float(ftr["peak_gpu_mem_mb"]) if ftr is not None else float("nan")
                     ),
-                    "gt_epochs": int(ftr["epochs_run"]) if ftr is not None else 0,
-                    "gt_skipped": t.gt_skipped.get(model, False),
+                    "ref_epochs": int(ftr["epochs_run"]) if ftr is not None else 0,
+                    "ref_skipped": t.ref_skipped.get(model, False),
                 }
             )
     return pd.DataFrame(rows)

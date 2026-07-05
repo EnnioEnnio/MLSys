@@ -79,7 +79,7 @@ def _write_repeat_pair(
     """Write an r1+r3 (+optional regret) CSV pair for a frozen repeat-count comparison."""
     import pandas as pd
 
-    # r1: lower-variance proxy (repeat=1); r3: higher-variance truth (repeat=3).
+    # r1: repeat=1 frozen proxy; r3: repeat=3 frozen proxy (lower variance, NOT ground truth).
     # Same model pool as _write_triple but both passes are "frozen" (inference_s > 0 for both).
     r1_rows = [
         _row("alpha", 0.48, inference_s=10, train_head_s=5, epochs_run=20, strategy="frozen"),
@@ -267,7 +267,7 @@ def test_load_triple_flags_diverged_and_skipped(tmp_path):
     assert "regret" not in tf.paths  # missing-regret case
     triple = loader.load_triple(tf)
     assert triple.diverged == {"alpha": True, "beta": False, "gamma": False, "m2v": False}
-    assert triple.gt_skipped == {
+    assert triple.ref_skipped == {
         "alpha": False,
         "beta": False,
         "gamma": False,
@@ -326,7 +326,7 @@ def test_table_builders_on_tiny_frames(tmp_path):
     assert "delta_r2" in per.columns
 
     summary = tables.per_triple_summary(triple)
-    assert summary.best_gt_model == "beta"  # 0.70 is max gt r2
+    assert summary.best_ref_model == "beta"  # 0.70 is max ref r2
     assert summary.n_diverged == 1
     assert 1 <= summary.budget_to_zero <= len(triple.models)
 
@@ -399,7 +399,7 @@ def test_epochs_table(tmp_path):
         "mean_proxy_epochs",
         "n_proxy_at_cap",
         "proxy_cap",
-        "mean_gt_epochs",
+        "mean_ref_epochs",
     }
     assert len(df) == 2
     # All frozen rows have epochs_run=20, cap=20 → n_frozen_at_cap=4 (all 4 models hit cap)
@@ -465,7 +465,7 @@ def test_value_frontier_table(tmp_path):
         "model",
         "proxy_inference_s",
         "proxy_r2",
-        "gt_r2",
+        "ref_r2",
         "proxy_peak_gpu_mem_mb",
     }
     assert len(df) == 4  # 4 models, widest head
@@ -533,19 +533,21 @@ def test_new_plots_smoke(tmp_path):
 
 
 def test_load_triple_r1_r3_labels(tmp_path):
-    """r1+r3 pair → proxy_label='repeat=1', truth_label='repeat=3', finetune_skipped empty."""
+    """r1+r3 pair → correct labels, empty flags, supports_regret/supports_divergence False."""
     pytest.importorskip("pandas")
     _write_repeat_pair(tmp_path, "exp001", "FCH", with_regret=False, head_type="linear")
     (tf,) = loader.discover_triples(tmp_path)
     assert tf.paths.keys() >= {"r1", "r3"}
     triple = loader.load_triple(tf)
     assert triple.proxy_label == "repeat=1"
-    assert triple.truth_label == "repeat=3"
-    # finetune_skipped must be empty — both passes are frozen (inference_s > 0 for all)
-    assert triple.gt_skipped == {}
-    # diverged is still meaningful: truth r² < 0 flags a poor model
-    assert set(triple.diverged.keys()) == {"alpha", "beta", "gamma", "m2v"}
-    assert all(not v for v in triple.diverged.values())  # all r3 r² > 0
+    assert triple.reference_label == "repeat=3"
+    # Both capability flags must be False: r3 is a frozen proxy, not ground truth.
+    assert triple.role_pair.supports_regret is False
+    assert triple.role_pair.supports_divergence is False
+    # ref_skipped must be empty — both passes are frozen (inference_s > 0 for all)
+    assert triple.ref_skipped == {}
+    # diverged is empty for frozen-vs-frozen pairs — backbone divergence only applies to finetune
+    assert triple.diverged == {}
 
 
 def test_cli_analyze_r1_r3_smoke(tmp_path):
@@ -561,8 +563,8 @@ def test_cli_analyze_r1_r3_smoke(tmp_path):
     summary = (out / "SUMMARY.md").read_text()
     assert "repeat=1" in summary
     assert "repeat=3" in summary
-    # The regret CSV should have been recomputed and written back.
-    assert (tmp_path / "exp001_wine_reviews_frozen_4_model_FCH_regret.csv").exists()
+    # Regret is NOT computed for same-strategy pairs — the all-zero curve is not a finding.
+    assert not (tmp_path / "exp001_wine_reviews_frozen_4_model_FCH_regret.csv").exists()
 
 
 # ----------------------------------------------------------------- CLI smokes

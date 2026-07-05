@@ -53,23 +53,23 @@ def _save(fig: Figure, out_dir: str | Path, slug: str) -> Path:
 
 
 def _pass_labels(triples: list[Triple]) -> tuple[str, str]:
-    """Return (proxy_label, truth_label) from the first triple, with safe defaults."""
+    """Return (proxy_label, reference_label) from the first triple, with safe defaults."""
     if triples:
-        return triples[0].proxy_label, triples[0].truth_label
-    return "proxy", "truth"
+        return triples[0].proxy_label, triples[0].reference_label
+    return "proxy", "reference"
 
 
 # --------------------------------------------------------------------- per-triple quality
 
 
 def plot_r2_proxy_vs_gt(triple: Triple, out_dir: str | Path) -> Path:
-    """(1) Grouped bars: proxy vs truth r² per model. → ``r2_proxy_vs_gt.png``."""
+    """(1) Grouped bars: proxy vs reference r² per model. → ``r2_proxy_vs_gt.png``."""
     import pandas as pd
 
     plt, sns = _setup()
-    pl, tl = triple.proxy_label, triple.truth_label
+    pl, tl = triple.proxy_label, triple.reference_label
     fz = triple.proxy.set_index("model")["r2"]
-    ft = triple.gt.set_index("model")["r2"]
+    ft = triple.reference.set_index("model")["r2"]
     long = pd.DataFrame(
         [{"model": m, "pass": pl, "r2": float(fz[m])} for m in triple.models]
         + [{"model": m, "pass": tl, "r2": float(ft[m])} for m in triple.models if m in ft.index]
@@ -84,13 +84,13 @@ def plot_r2_proxy_vs_gt(triple: Triple, out_dir: str | Path) -> Path:
 
 
 def plot_proxy_scatter(triple: Triple, out_dir: str | Path) -> Path:
-    """(2) Scatter frozen-r² (proxy) vs finetune-r² with y=x; flag skipped/diverged.
+    """(2) Scatter proxy-r² vs reference-r² with y=x; flag skipped/diverged.
 
     → ``proxy_scatter.png``.
     """
     plt, _ = _setup()
     fz = triple.proxy.set_index("model")["r2"]
-    ft = triple.gt.set_index("model")["r2"]
+    ft = triple.reference.set_index("model")["r2"]
     fig, ax = plt.subplots(figsize=(7, 7))
     lo, hi = 1e9, -1e9
     for m in triple.models:
@@ -98,7 +98,7 @@ def plot_proxy_scatter(triple: Triple, out_dir: str | Path) -> Path:
             continue
         x, y = float(fz[m]), float(ft[m])
         lo, hi = min(lo, x, y), max(hi, x, y)
-        if triple.gt_skipped.get(m):
+        if triple.ref_skipped.get(m):
             color = theme.STATUS_COLORS["skipped"]
             marker = theme.STATUS_MARKERS["skipped"]
         elif triple.diverged.get(m):
@@ -112,19 +112,20 @@ def plot_proxy_scatter(triple: Triple, out_dir: str | Path) -> Path:
     pad = 0.05 * (hi - lo or 1)
     ax.plot([lo - pad, hi + pad], [lo - pad, hi + pad], "--", color=theme.GRID, label="y = x")
     ax.set_xlabel(f"{triple.proxy_label} r² (cheap proxy)")
-    ax.set_ylabel(f"{triple.truth_label} r² (ground truth)")
+    ref_qualifier = " (ground truth)" if triple.reference_label == "finetune" else ""
+    ax.set_ylabel(f"{triple.reference_label} r²{ref_qualifier}")
     ax.set_title(f"Proxy quality — head {triple.head}\nslate=ok  brick-red=diverged  grey=skipped")
     ax.legend()
     return _save(fig, out_dir, "proxy_scatter")
 
 
 def plot_r2_delta(triple: Triple, out_dir: str | Path) -> Path:
-    """(3) Diverging bars of Δ = finetune - frozen r² per model. → ``r2_delta.png``."""
+    """(3) Diverging bars of Δ = reference - proxy r² per model. → ``r2_delta.png``."""
     import pandas as pd
 
     plt, _ = _setup()
     fz = triple.proxy.set_index("model")["r2"]
-    ft = triple.gt.set_index("model")["r2"]
+    ft = triple.reference.set_index("model")["r2"]
     deltas = [
         {"model": m, "delta_r2": float(ft[m]) - float(fz[m])}
         for m in triple.models
@@ -137,8 +138,8 @@ def plot_r2_delta(triple: Triple, out_dir: str | Path) -> Path:
     fig, ax = plt.subplots(figsize=(max(8, len(df)), 5))
     ax.bar(df["model"], df["delta_r2"], color=colors)
     ax.axhline(0, color=theme.INK, linewidth=0.8)
-    ax.set_ylabel(f"Δ r² ({triple.truth_label} - {triple.proxy_label})")
-    ax.set_title(f"{triple.truth_label} lift over {triple.proxy_label} — head {triple.head}")
+    ax.set_ylabel(f"Δ r² ({triple.reference_label} - {triple.proxy_label})")
+    ax.set_title(f"{triple.reference_label} lift over {triple.proxy_label} — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
     return _save(fig, out_dir, "r2_delta")
 
@@ -172,13 +173,13 @@ def plot_regret_curve(triple: Triple, out_dir: str | Path) -> Path:
     return _save(fig, out_dir, "regret_curve")
 
 
-def plot_gt_spearman_vs_r2(triple: Triple, out_dir: str | Path) -> Path:
-    """(5) Ground-truth Spearman vs r² — the "rank kept, scale broken" story.
+def plot_ref_spearman_vs_r2(triple: Triple, out_dir: str | Path) -> Path:
+    """(5) Reference-pass Spearman vs r² — the "rank kept, scale broken" story.
 
-    → ``gt_spearman_vs_r2.png``.
+    → ``ref_spearman_vs_r2.png``.
     """
     plt, _ = _setup()
-    ft = triple.gt
+    ft = triple.reference
     fig, ax = plt.subplots(figsize=(7, 6))
     for model, r2, spearman in zip(ft["model"], ft["r2"], ft["spearman"], strict=True):
         if triple.diverged.get(str(model), False):
@@ -192,24 +193,24 @@ def plot_gt_spearman_vs_r2(triple: Triple, out_dir: str | Path) -> Path:
             str(model), (r2, spearman), fontsize=7, xytext=(3, 3), textcoords="offset points"
         )
     ax.axvline(0, color=theme.GRID, linestyle="--", label="r² = 0 (scale broken left of here)")
-    ax.set_xlabel(f"{triple.truth_label} r²")
-    ax.set_ylabel(f"{triple.truth_label} Spearman")
+    ax.set_xlabel(f"{triple.reference_label} r²")
+    ax.set_ylabel(f"{triple.reference_label} Spearman")
     ax.set_title(
         f"Rank preserved vs scale broken — head {triple.head}\n"
         "diverged models (brick-red) keep high Spearman despite negative r²"
     )
     ax.legend()
-    return _save(fig, out_dir, "gt_spearman_vs_r2")
+    return _save(fig, out_dir, "ref_spearman_vs_r2")
 
 
 # ------------------------------------------------------------------------ per-triple RQ2
 
 
 def plot_timing_stacked(triple: Triple, out_dir: str | Path) -> Path:
-    """(R1) Stacked substep timing per model, frozen vs finetune side-by-side.
+    """(R1) Stacked substep timing per model, proxy vs reference side-by-side.
 
-    → ``timing_stacked.png``. Frozen stack = inference_s + train_head_s + others; finetune
-    stack = train_head_s (inference fused → 0).
+    → ``timing_stacked.png``. Proxy stack = inference_s + train_head_s + others; reference
+    stack = train_head_s (inference fused → 0 for finetune).
     """
     import numpy as np
 
@@ -217,12 +218,12 @@ def plot_timing_stacked(triple: Triple, out_dir: str | Path) -> Path:
 
     plt, _ = _setup()
     fz = triple.proxy.set_index("model")
-    ft = triple.gt.set_index("model")
+    ft = triple.reference.set_index("model")
     models = triple.models
     x = np.arange(len(models))
     width = 0.4
     fig, ax = plt.subplots(figsize=(max(9, len(models) * 1.1), 5.5))
-    pl, tl = triple.proxy_label, triple.truth_label
+    pl, tl = triple.proxy_label, triple.reference_label
     for offset, frame, label in ((-width / 2, fz, pl), (width / 2, ft, tl)):
         bottom = np.zeros(len(models))
         for ki, key in enumerate(SUBSTEP_KEYS):
@@ -246,13 +247,13 @@ def plot_timing_stacked(triple: Triple, out_dir: str | Path) -> Path:
 
 
 def plot_peak_gpu_mem(triple: Triple, out_dir: str | Path) -> Path:
-    """(R2) peak_gpu_mem_mb per model, frozen vs finetune. → ``peak_gpu_mem.png``."""
+    """(R2) peak_gpu_mem_mb per model, proxy vs reference. → ``peak_gpu_mem.png``."""
     import pandas as pd
 
     plt, sns = _setup()
-    pl, tl = triple.proxy_label, triple.truth_label
+    pl, tl = triple.proxy_label, triple.reference_label
     fz = triple.proxy.set_index("model")["peak_gpu_mem_mb"]
-    ft = triple.gt.set_index("model")["peak_gpu_mem_mb"]
+    ft = triple.reference.set_index("model")["peak_gpu_mem_mb"]
     long = pd.DataFrame(
         [{"model": m, "pass": pl, "peak_gpu_mem_mb": float(fz[m])} for m in triple.models]
         + [
@@ -351,12 +352,12 @@ def plot_regret_at1_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
 
 
 def plot_best_r2_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(8) Best proxy & best truth r² vs head width. → ``best_r2_vs_head.png``."""
+    """(8) Best proxy & best reference r² vs head width. → ``best_r2_vs_head.png``."""
     pl, tl = _pass_labels(triples)
     plt, _ = _setup()
     heads = [t.head for t in triples]
     best_fz = [float(t.proxy["r2"].max()) for t in triples]
-    best_ft = [float(t.gt["r2"].max()) for t in triples]
+    best_ft = [float(t.reference["r2"].max()) for t in triples]
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(
         heads, best_fz, marker=theme.PROXY_MARKER, color=theme.PROXY_COLOR, label=f"best {pl} r²"
@@ -376,7 +377,7 @@ def _heatmap(triples: list[Triple], kind: str, out_dir: str | Path, slug: str, t
     plt, sns = _setup()
     series = {}
     for t in triples:
-        frame = t.proxy if kind == "proxy" else t.gt
+        frame = t.proxy if kind == "proxy" else t.reference
         series[t.head] = frame.set_index("model")["r2"]
     matrix = pd.DataFrame(series)
     fig, ax = plt.subplots(figsize=(max(6, len(triples) * 1.5), max(6, len(matrix) * 0.5)))
@@ -393,10 +394,10 @@ def plot_heatmap_proxy_r2(triples: list[Triple], out_dir: str | Path) -> Path:
     return _heatmap(triples, "proxy", out_dir, "heatmap_proxy_r2", f"{pl} r² (model x head)")
 
 
-def plot_heatmap_gt_r2(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(9b) model x head truth-r² heatmap. → ``heatmap_gt_r2.png``."""
+def plot_heatmap_ref_r2(triples: list[Triple], out_dir: str | Path) -> Path:
+    """(9b) model x head reference-r² heatmap. → ``heatmap_ref_r2.png``."""
     tl = _pass_labels(triples)[1]
-    return _heatmap(triples, "gt", out_dir, "heatmap_gt_r2", f"{tl} r² (model x head)")
+    return _heatmap(triples, "reference", out_dir, "heatmap_ref_r2", f"{tl} r² (model x head)")
 
 
 def plot_divergence_map(triples: list[Triple], out_dir: str | Path) -> Path:
@@ -409,6 +410,9 @@ def plot_divergence_map(triples: list[Triple], out_dir: str | Path) -> Path:
     plt, sns = _setup()
     matrix = pd.DataFrame({t.head: pd.Series(t.diverged) for t in triples}).astype(float)
     fig, ax = plt.subplots(figsize=(max(6, len(triples) * 1.5), max(6, len(matrix) * 0.5)))
+    if matrix.empty:
+        ax.text(0.5, 0.5, "no diverged models", ha="center", va="center", transform=ax.transAxes)
+        return _save(fig, out_dir, "divergence_map")
     sns.heatmap(
         matrix,
         annot=True,
@@ -424,7 +428,7 @@ def plot_divergence_map(triples: list[Triple], out_dir: str | Path) -> Path:
 
 
 def plot_proxy_rank_spearman_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(11) Spearman(proxy rank, truth rank) per head, one bar each.
+    """(11) Spearman(proxy rank, reference rank) per head, one bar each.
 
     → ``proxy_rank_spearman_vs_head.png``. Does a wider proxy head make a *better proxy*?
     """
@@ -447,8 +451,8 @@ def plot_cost_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
     tl = _pass_labels(triples)[1]
     plt, _ = _setup()
     heads = [t.head for t in triples]
-    mean_head_s = [float(t.gt["train_head_s"].mean()) for t in triples]
-    mean_mem = [float(t.gt["peak_gpu_mem_mb"].mean()) for t in triples]
+    mean_head_s = [float(t.reference["train_head_s"].mean()) for t in triples]
+    mean_mem = [float(t.reference["peak_gpu_mem_mb"].mean()) for t in triples]
     fig, ax1 = plt.subplots(figsize=(8, 5))
     ax1.plot(
         heads,
@@ -477,10 +481,10 @@ def plot_cost_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
 
 
 def plot_epochs_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(#3) Grouped bar: mean frozen vs finetune epochs per head; annotate frozen cap.
+    """(#3) Grouped bar: mean proxy vs reference epochs per head; annotate proxy cap.
 
-    → ``epochs_vs_head.png``. Shows where early-stopping kicks in (frozen) vs where the
-    full budget is consumed (finetune).
+    → ``epochs_vs_head.png``. Shows where early-stopping kicks in (proxy) vs where the
+    full budget is consumed (reference/finetune).
     """
     from mlsys.analysis.tables import epochs_table
 
@@ -496,7 +500,7 @@ def plot_epochs_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
     heads = et["head"].tolist()
     x = range(len(heads))
     mean_fz = et["mean_proxy_epochs"].tolist()
-    mean_ft = et["mean_gt_epochs"].tolist()
+    mean_ft = et["mean_ref_epochs"].tolist()
     cap = et["proxy_cap"].iloc[0] if "proxy_cap" in et.columns else None
 
     fig, ax = plt.subplots(figsize=(max(6, len(heads) * 1.5), 5))
@@ -532,7 +536,7 @@ def plot_epochs_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
 
 
 def plot_head_rank_agreement(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(#4) Heatmap of the head x head Spearman rho matrix over frozen r2.
+    """(#4) Heatmap of the head x head Spearman rho matrix over proxy r2.
 
     -> ``head_rank_agreement.png``. Low off-diagonal rho means head choice changes the proxy
     ranking substantially.
@@ -608,7 +612,7 @@ def plot_proxy_timing_share(triples: list[Triple], out_dir: str | Path) -> Path:
 
 
 def plot_value_frontier(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(#6) Scatter: frozen inference_s (x) vs frozen r² (y) at the widest head.
+    """(#6) Scatter: proxy inference_s (x) vs proxy r² (y) at the widest head.
 
     → ``value_frontier.png``. Models annotated with their name. Shows the inference-cost vs
     quality trade-off for the backbone pool. Uses the widest head — inference_s is

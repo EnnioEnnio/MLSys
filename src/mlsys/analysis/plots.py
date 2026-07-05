@@ -62,8 +62,8 @@ def _pass_labels(triples: list[Triple]) -> tuple[str, str]:
 # --------------------------------------------------------------------- per-triple quality
 
 
-def plot_r2_proxy_vs_gt(triple: Triple, out_dir: str | Path) -> Path:
-    """(1) Grouped bars: proxy vs reference r² per model. → ``r2_proxy_vs_gt.png``."""
+def plot_r2_proxy_vs_reference(triple: Triple, out_dir: str | Path) -> Path:
+    """(1) Grouped bars: proxy vs reference r² per model. → ``r2_proxy_vs_reference.png``."""
     import pandas as pd
 
     plt, sns = _setup()
@@ -74,13 +74,13 @@ def plot_r2_proxy_vs_gt(triple: Triple, out_dir: str | Path) -> Path:
         [{"model": m, "pass": pl, "r2": float(fz[m])} for m in triple.models]
         + [{"model": m, "pass": tl, "r2": float(ft[m])} for m in triple.models if m in ft.index]
     )
-    palette = {pl: theme.PROXY_COLOR, tl: theme.TRUTH_COLOR}
+    palette = {pl: theme.PROXY_COLOR, tl: theme.REFERENCE_COLOR}
     fig, ax = plt.subplots(figsize=(max(8, len(triple.models)), 5))
     sns.barplot(long, x="model", y="r2", hue="pass", palette=palette, ax=ax)
     ax.axhline(0, color=theme.INK, linewidth=0.8)
     ax.set_title(f"{pl} vs {tl} r² — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
-    return _save(fig, out_dir, "r2_proxy_vs_gt")
+    return _save(fig, out_dir, "r2_proxy_vs_reference")
 
 
 def plot_proxy_scatter(triple: Triple, out_dir: str | Path) -> Path:
@@ -159,9 +159,9 @@ def plot_regret_curve(triple: Triple, out_dir: str | Path) -> Path:
     ax.plot(
         df["budget"],
         df["normalized_regret"],
-        marker=theme.TRUTH_MARKER,
+        marker=theme.REFERENCE_MARKER,
         linestyle="--",
-        color=theme.TRUTH_COLOR,
+        color=theme.REFERENCE_COLOR,
         label="normalized",
     )
     b0 = budget_to_zero(df)
@@ -262,7 +262,7 @@ def plot_peak_gpu_mem(triple: Triple, out_dir: str | Path) -> Path:
             if m in ft.index
         ]
     )
-    palette = {pl: theme.PROXY_COLOR, tl: theme.TRUTH_COLOR}
+    palette = {pl: theme.PROXY_COLOR, tl: theme.REFERENCE_COLOR}
     fig, ax = plt.subplots(figsize=(max(8, len(triple.models)), 5))
     sns.barplot(long, x="model", y="peak_gpu_mem_mb", hue="pass", palette=palette, ax=ax)
     ax.set_title(f"Peak GPU memory {pl} vs {tl} — head {triple.head}")
@@ -339,7 +339,11 @@ def plot_regret_at1_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
     fig, ax1 = plt.subplots(figsize=(8, 5))
     ax1.plot(heads, at1, marker=theme.PROXY_MARKER, color=theme.PROXY_COLOR, label="regret@1")
     ax1.plot(
-        heads, auc, marker=theme.TRUTH_MARKER, color=theme.TRUTH_COLOR, label="mean regret (AUC)"
+        heads,
+        auc,
+        marker=theme.REFERENCE_MARKER,
+        color=theme.REFERENCE_COLOR,
+        label="mean regret (AUC)",
     )
     ax1.set_ylabel("regret (r²)")
     ax2 = ax1.twinx()
@@ -363,7 +367,11 @@ def plot_best_r2_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
         heads, best_fz, marker=theme.PROXY_MARKER, color=theme.PROXY_COLOR, label=f"best {pl} r²"
     )
     ax.plot(
-        heads, best_ft, marker=theme.TRUTH_MARKER, color=theme.TRUTH_COLOR, label=f"best {tl} r²"
+        heads,
+        best_ft,
+        marker=theme.REFERENCE_MARKER,
+        color=theme.REFERENCE_COLOR,
+        label=f"best {tl} r²",
     )
     ax.set_ylabel("r²")
     ax.set_title("Best achievable r² vs head width")
@@ -457,8 +465,8 @@ def plot_cost_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
     ax1.plot(
         heads,
         mean_head_s,
-        marker=theme.TRUTH_MARKER,
-        color=theme.TRUTH_COLOR,
+        marker=theme.REFERENCE_MARKER,
+        color=theme.REFERENCE_COLOR,
         label=f"mean {tl} train_head_s",
     )
     ax1.set_ylabel("mean train_head_s")
@@ -518,7 +526,7 @@ def plot_epochs_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
         mean_ft,
         width,
         label=f"mean {tl} epochs",
-        color=theme.TRUTH_COLOR,
+        color=theme.REFERENCE_COLOR,
     )
     if cap is not None and not (isinstance(cap, float) and cap != cap):
         ax.axhline(

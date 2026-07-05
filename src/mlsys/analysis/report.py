@@ -145,7 +145,7 @@ def _build_per_head(triple: Triple, out_dir: Path) -> PerHead:
     summary = tables.per_triple_summary(triple)
 
     png = {
-        "r2_proxy_vs_gt": plots.plot_r2_proxy_vs_gt(triple, head_dir),
+        "r2_proxy_vs_reference": plots.plot_r2_proxy_vs_reference(triple, head_dir),
         "proxy_scatter": plots.plot_proxy_scatter(triple, head_dir),
         "r2_delta": plots.plot_r2_delta(triple, head_dir),
         "regret_curve": plots.plot_regret_curve(triple, head_dir),
@@ -257,7 +257,7 @@ def _assemble_summary(
         cols = ["model", "proxy_r2", "proxy_mse", "proxy_mae", "proxy_spearman"]
         parts.append(f"### Head {t.head}\n")
         parts.append(md(ph.table[cols]))
-        parts.append(_img(ph.png["r2_proxy_vs_gt"], out_dir))
+        parts.append(_img(ph.png["r2_proxy_vs_reference"], out_dir))
         parts.append(_img(ph.png["proxy_scatter"], out_dir))
 
     # 2. reference pass results (with divergence / spearman-vs-r2 story)

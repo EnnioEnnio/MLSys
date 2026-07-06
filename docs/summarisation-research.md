@@ -10,8 +10,7 @@
 
 **Short summaries, "key facts retention" benchmark (OpenMark, March 2026)**
 - Minimax M2.5 Lightning 90%, Grok-4 87%, GPT-5-mini 83%
-- -> larger models generalise more — not more factual
-- [HalluLens: LLM Hallucination Benchmark]
+- -> larger models generalise more — not more factual [9]
 
 **Self-hosted**
 - Qwen3-30B-A3B-Instruct-2507 (MoE, ~3B active — cheapest), GLM-4.5V, GPT-OSS-120B (heaviest) — commonly cited leaders for self-hosted summarization specifically [2]
@@ -23,18 +22,7 @@
 - T5 (Google) — summarization is one of many fine-tuned tasks; T5-Base narrows the gap to BART/PEGASUS efficiently, but weak on long docs [1] [4]
 - FLAN-T5 (Google) — instruction-tuned T5; beat BART on CNN/DM in one head-to-head (ROUGE/BERTScore/METEOR) [5]
 - ProphetNet (Microsoft) — multi-future-token prediction, used for summarization benchmarks
-- -> no single winner; best model is dataset-dependent [4]
-- [https://ieeexplore.ieee.org/document/11134200]
-
-**HFs**
-- google/pegasus-xsum — extreme/single-sentence summarization
-- google/pegasus-large — base checkpoint
-- facebook/bart-large — base checkpoint
-- facebook/bart-large-xsum — short abstractive summaries
-- google-t5/t5-base (use "summarize: ")
-- google/flan-t5-base / -large — instruction-tuned T5, often stronger out of the box
-- google/long-t5-tglobal-base — long-document branch
-- microsoft/prophetnet-large-uncased-cnndm — fine-tuned on CNN/DM
+- -> no single winner; best model is dataset-dependent [4][10]
 
 ## Datasets
 
@@ -64,3 +52,5 @@
 [6] SAMSum dataset card, Hugging Face — https://huggingface.co/datasets/knkarthick/samsum
 [7] Benchmarking Large Language Models for News Summarization — https://arxiv.org/pdf/2301.13848
 [8] SMART: Sentence-Level Matching for Reference-based Summarization Evaluation, ICLR 2023 — https://openreview.net/pdf?id=OIe3kpwl40D
+[9] HalluLens: LLM Hallucination Benchmark, Bang et al. (Meta FAIR / HKUST), ACL 2025 — https://arxiv.org/abs/2504.17550
+[10] Benchmarking State-of-the-Art Text Summarization Models (BART, T5, PEGASUS, ProphetNet, GPT-3), IEEE — https://ieeexplore.ieee.org/document/11134200/

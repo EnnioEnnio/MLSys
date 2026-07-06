@@ -68,6 +68,11 @@ pip install --no-cache-dir -e /workspace
 # Search strategy for this run (see header for options). Edit and re-submit to change.
 STRATEGY=full_eval
 
+# Number of head training repetitions (predictions averaged to reduce ranking variance
+# on the frozen proxy pass). For full_eval the finetune pass is forced to head_repeats=1
+# internally (REGRET note 2), so this setting only affects the frozen proxy pass.
+HEAD_REPEATS=3
+
 echo "Running model search (strategy=$STRATEGY)..."
 # expandable_segments lets the CUDA allocator grow/shrink segments instead of
 # locking fixed-size blocks, so reserved memory from one backbone can be reused
@@ -90,6 +95,7 @@ srun --container-name=$CONTAINER_NAME \
        --dataset wine_reviews \
        --strategy $STRATEGY \
        --hidden 0 \
+       --head-repeats $HEAD_REPEATS \
        --output-dir /workspace/runs/$SLURM_JOB_ID \
        $FINETUNE_ARGS \
        --wandb

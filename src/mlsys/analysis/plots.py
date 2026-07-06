@@ -52,40 +52,45 @@ def _save(fig: Figure, out_dir: str | Path, slug: str) -> Path:
     return path
 
 
+def _pass_labels(triples: list[Triple]) -> tuple[str, str]:
+    """Return (proxy_label, reference_label) from the first triple, with safe defaults."""
+    if triples:
+        return triples[0].proxy_label, triples[0].reference_label
+    return "proxy", "reference"
+
+
 # --------------------------------------------------------------------- per-triple quality
 
 
-def plot_r2_frozen_vs_finetune(triple: Triple, out_dir: str | Path) -> Path:
-    """(1) Grouped bars: frozen vs finetune r² per model. → ``r2_frozen_vs_finetune.png``."""
+def plot_r2_proxy_vs_reference(triple: Triple, out_dir: str | Path) -> Path:
+    """(1) Grouped bars: proxy vs reference r² per model. → ``r2_proxy_vs_reference.png``."""
     import pandas as pd
 
     plt, sns = _setup()
-    fz = triple.frozen.set_index("model")["r2"]
-    ft = triple.finetune.set_index("model")["r2"]
+    pl, tl = triple.proxy_label, triple.reference_label
+    fz = triple.proxy.set_index("model")["r2"]
+    ft = triple.reference.set_index("model")["r2"]
     long = pd.DataFrame(
-        [{"model": m, "pass": "frozen", "r2": float(fz[m])} for m in triple.models]
-        + [
-            {"model": m, "pass": "finetune", "r2": float(ft[m])}
-            for m in triple.models
-            if m in ft.index
-        ]
+        [{"model": m, "pass": pl, "r2": float(fz[m])} for m in triple.models]
+        + [{"model": m, "pass": tl, "r2": float(ft[m])} for m in triple.models if m in ft.index]
     )
+    palette = {pl: theme.PROXY_COLOR, tl: theme.REFERENCE_COLOR}
     fig, ax = plt.subplots(figsize=(max(8, len(triple.models)), 5))
-    sns.barplot(long, x="model", y="r2", hue="pass", palette=theme.PASS_COLORS, ax=ax)
+    sns.barplot(long, x="model", y="r2", hue="pass", palette=palette, ax=ax)
     ax.axhline(0, color=theme.INK, linewidth=0.8)
-    ax.set_title(f"Frozen vs finetune r² — head {triple.head}")
+    ax.set_title(f"{pl} vs {tl} r² — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
-    return _save(fig, out_dir, "r2_frozen_vs_finetune")
+    return _save(fig, out_dir, "r2_proxy_vs_reference")
 
 
 def plot_proxy_scatter(triple: Triple, out_dir: str | Path) -> Path:
-    """(2) Scatter frozen-r² (proxy) vs finetune-r² with y=x; flag skipped/diverged.
+    """(2) Scatter proxy-r² vs reference-r² with y=x; flag skipped/diverged.
 
     → ``proxy_scatter.png``.
     """
     plt, _ = _setup()
-    fz = triple.frozen.set_index("model")["r2"]
-    ft = triple.finetune.set_index("model")["r2"]
+    fz = triple.proxy.set_index("model")["r2"]
+    ft = triple.reference.set_index("model")["r2"]
     fig, ax = plt.subplots(figsize=(7, 7))
     lo, hi = 1e9, -1e9
     for m in triple.models:
@@ -93,7 +98,7 @@ def plot_proxy_scatter(triple: Triple, out_dir: str | Path) -> Path:
             continue
         x, y = float(fz[m]), float(ft[m])
         lo, hi = min(lo, x, y), max(hi, x, y)
-        if triple.finetune_skipped.get(m):
+        if triple.ref_skipped.get(m):
             color = theme.STATUS_COLORS["skipped"]
             marker = theme.STATUS_MARKERS["skipped"]
         elif triple.diverged.get(m):
@@ -106,20 +111,21 @@ def plot_proxy_scatter(triple: Triple, out_dir: str | Path) -> Path:
         ax.annotate(m, (x, y), fontsize=7, xytext=(3, 3), textcoords="offset points")
     pad = 0.05 * (hi - lo or 1)
     ax.plot([lo - pad, hi + pad], [lo - pad, hi + pad], "--", color=theme.GRID, label="y = x")
-    ax.set_xlabel("frozen r² (cheap proxy)")
-    ax.set_ylabel("finetune r² (ground truth)")
+    ax.set_xlabel(f"{triple.proxy_label} r² (cheap proxy)")
+    ref_qualifier = " (ground truth)" if triple.reference_label == "finetune" else ""
+    ax.set_ylabel(f"{triple.reference_label} r²{ref_qualifier}")
     ax.set_title(f"Proxy quality — head {triple.head}\nslate=ok  brick-red=diverged  grey=skipped")
     ax.legend()
     return _save(fig, out_dir, "proxy_scatter")
 
 
 def plot_r2_delta(triple: Triple, out_dir: str | Path) -> Path:
-    """(3) Diverging bars of Δ = finetune - frozen r² per model. → ``r2_delta.png``."""
+    """(3) Diverging bars of Δ = reference - proxy r² per model. → ``r2_delta.png``."""
     import pandas as pd
 
     plt, _ = _setup()
-    fz = triple.frozen.set_index("model")["r2"]
-    ft = triple.finetune.set_index("model")["r2"]
+    fz = triple.proxy.set_index("model")["r2"]
+    ft = triple.reference.set_index("model")["r2"]
     deltas = [
         {"model": m, "delta_r2": float(ft[m]) - float(fz[m])}
         for m in triple.models
@@ -132,8 +138,8 @@ def plot_r2_delta(triple: Triple, out_dir: str | Path) -> Path:
     fig, ax = plt.subplots(figsize=(max(8, len(df)), 5))
     ax.bar(df["model"], df["delta_r2"], color=colors)
     ax.axhline(0, color=theme.INK, linewidth=0.8)
-    ax.set_ylabel("Δ r² (finetune - frozen)")
-    ax.set_title(f"Finetune lift over frozen — head {triple.head}")
+    ax.set_ylabel(f"Δ r² ({triple.reference_label} - {triple.proxy_label})")
+    ax.set_title(f"{triple.reference_label} lift over {triple.proxy_label} — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
     return _save(fig, out_dir, "r2_delta")
 
@@ -146,34 +152,34 @@ def plot_regret_curve(triple: Triple, out_dir: str | Path) -> Path:
     ax.plot(
         df["budget"],
         df["regret"],
-        marker=theme.PASS_MARKERS["frozen"],
-        color=theme.PASS_COLORS["frozen"],
+        marker=theme.PROXY_MARKER,
+        color=theme.PROXY_COLOR,
         label="regret",
     )
     ax.plot(
         df["budget"],
         df["normalized_regret"],
-        marker=theme.PASS_MARKERS["finetune"],
+        marker=theme.REFERENCE_MARKER,
         linestyle="--",
-        color=theme.PASS_COLORS["finetune"],
+        color=theme.REFERENCE_COLOR,
         label="normalized",
     )
     b0 = budget_to_zero(df)
     ax.axvline(b0, color=theme.GRID, linestyle=":", label=f"budget-to-zero = {b0}")
-    ax.set_xlabel("budget B (top-B of frozen-r² ranking)")
+    ax.set_xlabel(f"budget B (top-B of {triple.proxy_label}-r² ranking)")
     ax.set_ylabel("regret (r²)")
     ax.set_title(f"Regret vs budget — head {triple.head}")
     ax.legend()
     return _save(fig, out_dir, "regret_curve")
 
 
-def plot_finetune_spearman_vs_r2(triple: Triple, out_dir: str | Path) -> Path:
-    """(5) Finetune Spearman vs r² — the "rank kept, scale broken" story.
+def plot_ref_spearman_vs_r2(triple: Triple, out_dir: str | Path) -> Path:
+    """(5) Reference-pass Spearman vs r² — the "rank kept, scale broken" story.
 
-    → ``finetune_spearman_vs_r2.png``.
+    → ``ref_spearman_vs_r2.png``.
     """
     plt, _ = _setup()
-    ft = triple.finetune
+    ft = triple.reference
     fig, ax = plt.subplots(figsize=(7, 6))
     for model, r2, spearman in zip(ft["model"], ft["r2"], ft["spearman"], strict=True):
         if triple.diverged.get(str(model), False):
@@ -187,37 +193,38 @@ def plot_finetune_spearman_vs_r2(triple: Triple, out_dir: str | Path) -> Path:
             str(model), (r2, spearman), fontsize=7, xytext=(3, 3), textcoords="offset points"
         )
     ax.axvline(0, color=theme.GRID, linestyle="--", label="r² = 0 (scale broken left of here)")
-    ax.set_xlabel("finetune r²")
-    ax.set_ylabel("finetune Spearman")
+    ax.set_xlabel(f"{triple.reference_label} r²")
+    ax.set_ylabel(f"{triple.reference_label} Spearman")
     ax.set_title(
         f"Rank preserved vs scale broken — head {triple.head}\n"
         "diverged models (brick-red) keep high Spearman despite negative r²"
     )
     ax.legend()
-    return _save(fig, out_dir, "finetune_spearman_vs_r2")
+    return _save(fig, out_dir, "ref_spearman_vs_r2")
 
 
 # ------------------------------------------------------------------------ per-triple RQ2
 
 
 def plot_timing_stacked(triple: Triple, out_dir: str | Path) -> Path:
-    """(R1) Stacked substep timing per model, frozen vs finetune side-by-side.
+    """(R1) Stacked substep timing per model, proxy vs reference side-by-side.
 
-    → ``timing_stacked.png``. Frozen stack = inference_s + train_head_s + others; finetune
-    stack = train_head_s (inference fused → 0).
+    → ``timing_stacked.png``. Proxy stack = inference_s + train_head_s + others; reference
+    stack = train_head_s (inference fused → 0 for finetune).
     """
     import numpy as np
 
     from mlsys.analysis.theme import SUBSTEP_COLORS, SUBSTEP_HATCHES, SUBSTEP_KEYS
 
     plt, _ = _setup()
-    fz = triple.frozen.set_index("model")
-    ft = triple.finetune.set_index("model")
+    fz = triple.proxy.set_index("model")
+    ft = triple.reference.set_index("model")
     models = triple.models
     x = np.arange(len(models))
     width = 0.4
     fig, ax = plt.subplots(figsize=(max(9, len(models) * 1.1), 5.5))
-    for offset, frame, label in ((-width / 2, fz, "frozen"), (width / 2, ft, "finetune")):
+    pl, tl = triple.proxy_label, triple.reference_label
+    for offset, frame, label in ((-width / 2, fz, pl), (width / 2, ft, tl)):
         bottom = np.zeros(len(models))
         for ki, key in enumerate(SUBSTEP_KEYS):
             vals = np.array([float(frame.loc[m, key]) if m in frame.index else 0.0 for m in models])
@@ -228,50 +235,52 @@ def plot_timing_stacked(triple: Triple, out_dir: str | Path) -> Path:
                 bottom=bottom,
                 color=SUBSTEP_COLORS[ki],
                 hatch=SUBSTEP_HATCHES[ki],
-                label=f"{key}" if label == "frozen" else None,
+                label=f"{key}" if label == pl else None,
             )
             bottom += vals
     ax.set_xticks(x)
     ax.set_xticklabels(models, rotation=75)
-    ax.set_ylabel("seconds (left bar=frozen, right=finetune)")
-    ax.set_title(f"Timing breakdown frozen vs finetune — head {triple.head}")
+    ax.set_ylabel(f"seconds (left bar={pl}, right={tl})")
+    ax.set_title(f"Timing breakdown {pl} vs {tl} — head {triple.head}")
     ax.legend(title="substep", fontsize=8)
     return _save(fig, out_dir, "timing_stacked")
 
 
 def plot_peak_gpu_mem(triple: Triple, out_dir: str | Path) -> Path:
-    """(R2) peak_gpu_mem_mb per model, frozen vs finetune. → ``peak_gpu_mem.png``."""
+    """(R2) peak_gpu_mem_mb per model, proxy vs reference. → ``peak_gpu_mem.png``."""
     import pandas as pd
 
     plt, sns = _setup()
-    fz = triple.frozen.set_index("model")["peak_gpu_mem_mb"]
-    ft = triple.finetune.set_index("model")["peak_gpu_mem_mb"]
+    pl, tl = triple.proxy_label, triple.reference_label
+    fz = triple.proxy.set_index("model")["peak_gpu_mem_mb"]
+    ft = triple.reference.set_index("model")["peak_gpu_mem_mb"]
     long = pd.DataFrame(
-        [{"model": m, "pass": "frozen", "peak_gpu_mem_mb": float(fz[m])} for m in triple.models]
+        [{"model": m, "pass": pl, "peak_gpu_mem_mb": float(fz[m])} for m in triple.models]
         + [
-            {"model": m, "pass": "finetune", "peak_gpu_mem_mb": float(ft[m])}
+            {"model": m, "pass": tl, "peak_gpu_mem_mb": float(ft[m])}
             for m in triple.models
             if m in ft.index
         ]
     )
+    palette = {pl: theme.PROXY_COLOR, tl: theme.REFERENCE_COLOR}
     fig, ax = plt.subplots(figsize=(max(8, len(triple.models)), 5))
-    sns.barplot(long, x="model", y="peak_gpu_mem_mb", hue="pass", palette=theme.PASS_COLORS, ax=ax)
-    ax.set_title(f"Peak GPU memory frozen vs finetune — head {triple.head}")
+    sns.barplot(long, x="model", y="peak_gpu_mem_mb", hue="pass", palette=palette, ax=ax)
+    ax.set_title(f"Peak GPU memory {pl} vs {tl} — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
     return _save(fig, out_dir, "peak_gpu_mem")
 
 
-def plot_frozen_time_breakdown(triple: Triple, out_dir: str | Path) -> Path:
-    """(R3) Frozen pass: inference_s vs train_head_s share per model.
+def plot_proxy_time_breakdown(triple: Triple, out_dir: str | Path) -> Path:
+    """(R3) Proxy pass: inference_s vs train_head_s share per model.
 
-    → ``frozen_time_breakdown.png``.
+    → ``proxy_time_breakdown.png``.
     """
     import numpy as np
 
     from mlsys.analysis.theme import SUBSTEP_COLORS, SUBSTEP_HATCHES, SUBSTEP_KEYS
 
     plt, _ = _setup()
-    fz = triple.frozen.set_index("model")
+    fz = triple.proxy.set_index("model")
     models = triple.models
     inf_idx = SUBSTEP_KEYS.index("inference_s")
     head_idx = SUBSTEP_KEYS.index("train_head_s")
@@ -294,10 +303,10 @@ def plot_frozen_time_breakdown(triple: Triple, out_dir: str | Path) -> Path:
         hatch=SUBSTEP_HATCHES[head_idx],
     )
     ax.set_ylabel("seconds")
-    ax.set_title(f"Frozen pass: where the time goes — head {triple.head}")
+    ax.set_title(f"{triple.proxy_label} pass: where the time goes — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
     ax.legend()
-    return _save(fig, out_dir, "frozen_time_breakdown")
+    return _save(fig, out_dir, "proxy_time_breakdown")
 
 
 # --------------------------------------------------------------------------- comparison
@@ -328,18 +337,12 @@ def plot_regret_at1_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
         auc.append(float(df["regret"].mean()))
         b0.append(budget_to_zero(df))
     fig, ax1 = plt.subplots(figsize=(8, 5))
-    ax1.plot(
-        heads,
-        at1,
-        marker=theme.PASS_MARKERS["frozen"],
-        color=theme.PASS_COLORS["frozen"],
-        label="regret@1",
-    )
+    ax1.plot(heads, at1, marker=theme.PROXY_MARKER, color=theme.PROXY_COLOR, label="regret@1")
     ax1.plot(
         heads,
         auc,
-        marker=theme.PASS_MARKERS["finetune"],
-        color=theme.PASS_COLORS["finetune"],
+        marker=theme.REFERENCE_MARKER,
+        color=theme.REFERENCE_COLOR,
         label="mean regret (AUC)",
     )
     ax1.set_ylabel("regret (r²)")
@@ -353,25 +356,22 @@ def plot_regret_at1_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
 
 
 def plot_best_r2_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(8) Best frozen & best finetune r² vs head width. → ``best_r2_vs_head.png``."""
+    """(8) Best proxy & best reference r² vs head width. → ``best_r2_vs_head.png``."""
+    pl, tl = _pass_labels(triples)
     plt, _ = _setup()
     heads = [t.head for t in triples]
-    best_fz = [float(t.frozen["r2"].max()) for t in triples]
-    best_ft = [float(t.finetune["r2"].max()) for t in triples]
+    best_fz = [float(t.proxy["r2"].max()) for t in triples]
+    best_ft = [float(t.reference["r2"].max()) for t in triples]
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(
-        heads,
-        best_fz,
-        marker=theme.PASS_MARKERS["frozen"],
-        color=theme.PASS_COLORS["frozen"],
-        label="best frozen r²",
+        heads, best_fz, marker=theme.PROXY_MARKER, color=theme.PROXY_COLOR, label=f"best {pl} r²"
     )
     ax.plot(
         heads,
         best_ft,
-        marker=theme.PASS_MARKERS["finetune"],
-        color=theme.PASS_COLORS["finetune"],
-        label="best finetune r²",
+        marker=theme.REFERENCE_MARKER,
+        color=theme.REFERENCE_COLOR,
+        label=f"best {tl} r²",
     )
     ax.set_ylabel("r²")
     ax.set_title("Best achievable r² vs head width")
@@ -385,7 +385,7 @@ def _heatmap(triples: list[Triple], kind: str, out_dir: str | Path, slug: str, t
     plt, sns = _setup()
     series = {}
     for t in triples:
-        frame = t.frozen if kind == "frozen" else t.finetune
+        frame = t.proxy if kind == "proxy" else t.reference
         series[t.head] = frame.set_index("model")["r2"]
     matrix = pd.DataFrame(series)
     fig, ax = plt.subplots(figsize=(max(6, len(triples) * 1.5), max(6, len(matrix) * 0.5)))
@@ -396,16 +396,16 @@ def _heatmap(triples: list[Triple], kind: str, out_dir: str | Path, slug: str, t
     return _save(fig, out_dir, slug)
 
 
-def plot_heatmap_frozen_r2(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(9a) model x head frozen-r² heatmap. → ``heatmap_frozen_r2.png``."""
-    return _heatmap(triples, "frozen", out_dir, "heatmap_frozen_r2", "Frozen r² (model x head)")
+def plot_heatmap_proxy_r2(triples: list[Triple], out_dir: str | Path) -> Path:
+    """(9a) model x head proxy-r² heatmap. → ``heatmap_proxy_r2.png``."""
+    pl = _pass_labels(triples)[0]
+    return _heatmap(triples, "proxy", out_dir, "heatmap_proxy_r2", f"{pl} r² (model x head)")
 
 
-def plot_heatmap_finetune_r2(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(9b) model x head finetune-r² heatmap. → ``heatmap_finetune_r2.png``."""
-    return _heatmap(
-        triples, "finetune", out_dir, "heatmap_finetune_r2", "Finetune r² (model x head)"
-    )
+def plot_heatmap_ref_r2(triples: list[Triple], out_dir: str | Path) -> Path:
+    """(9b) model x head reference-r² heatmap. → ``heatmap_ref_r2.png``."""
+    tl = _pass_labels(triples)[1]
+    return _heatmap(triples, "reference", out_dir, "heatmap_ref_r2", f"{tl} r² (model x head)")
 
 
 def plot_divergence_map(triples: list[Triple], out_dir: str | Path) -> Path:
@@ -418,6 +418,9 @@ def plot_divergence_map(triples: list[Triple], out_dir: str | Path) -> Path:
     plt, sns = _setup()
     matrix = pd.DataFrame({t.head: pd.Series(t.diverged) for t in triples}).astype(float)
     fig, ax = plt.subplots(figsize=(max(6, len(triples) * 1.5), max(6, len(matrix) * 0.5)))
+    if matrix.empty:
+        ax.text(0.5, 0.5, "no diverged models", ha="center", va="center", transform=ax.transAxes)
+        return _save(fig, out_dir, "divergence_map")
     sns.heatmap(
         matrix,
         annot=True,
@@ -427,22 +430,24 @@ def plot_divergence_map(triples: list[Triple], out_dir: str | Path) -> Path:
         ax=ax,
         linewidths=0.5,
     )
-    ax.set_title("Divergence map — 1 = finetune r² < 0 (brick-red)")
+    tl = _pass_labels(triples)[1]
+    ax.set_title(f"Divergence map — 1 = {tl} r² < 0 (brick-red)")
     return _save(fig, out_dir, "divergence_map")
 
 
 def plot_proxy_rank_spearman_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(11) Spearman(frozen proxy rank, finetune rank) per head, one bar each.
+    """(11) Spearman(proxy rank, reference rank) per head, one bar each.
 
-    → ``proxy_rank_spearman_vs_head.png``. Does a wider frozen head make a *better proxy*?
+    → ``proxy_rank_spearman_vs_head.png``. Does a wider proxy head make a *better proxy*?
     """
+    pl, tl = _pass_labels(triples)
     plt, sns = _setup()
     heads = [t.head for t in triples]
     rhos = [rank_spearman(t) for t in triples]
     fig, ax = plt.subplots(figsize=(8, 5))
-    sns.barplot(x=heads, y=rhos, ax=ax, color=theme.PASS_COLORS["frozen"])
+    sns.barplot(x=heads, y=rhos, ax=ax, color=theme.PROXY_COLOR)
     ax.set_ylim(0, 1)
-    ax.set_ylabel("Spearman(frozen rank, finetune rank)")
+    ax.set_ylabel(f"Spearman({pl} rank, {tl} rank)")
     ax.set_title("Proxy rank fidelity vs head width")
     for i, r in enumerate(rhos):
         ax.text(i, r + 0.01, f"{r:.3f}", ha="center", fontsize=9)
@@ -451,29 +456,30 @@ def plot_proxy_rank_spearman_vs_head(triples: list[Triple], out_dir: str | Path)
 
 def plot_cost_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
     """(R4) Cross-run mean train_head_s & peak_gpu_mem_mb vs head width. → ``cost_vs_head.png``."""
+    tl = _pass_labels(triples)[1]
     plt, _ = _setup()
     heads = [t.head for t in triples]
-    mean_head_s = [float(t.finetune["train_head_s"].mean()) for t in triples]
-    mean_mem = [float(t.finetune["peak_gpu_mem_mb"].mean()) for t in triples]
+    mean_head_s = [float(t.reference["train_head_s"].mean()) for t in triples]
+    mean_mem = [float(t.reference["peak_gpu_mem_mb"].mean()) for t in triples]
     fig, ax1 = plt.subplots(figsize=(8, 5))
     ax1.plot(
         heads,
         mean_head_s,
-        marker=theme.PASS_MARKERS["finetune"],
-        color=theme.PASS_COLORS["finetune"],
-        label="mean finetune train_head_s",
+        marker=theme.REFERENCE_MARKER,
+        color=theme.REFERENCE_COLOR,
+        label=f"mean {tl} train_head_s",
     )
     ax1.set_ylabel("mean train_head_s")
     ax2 = ax1.twinx()
     ax2.plot(
         heads,
         mean_mem,
-        marker=theme.PASS_MARKERS["frozen"],
-        color=theme.PASS_COLORS["frozen"],
+        marker=theme.PROXY_MARKER,
+        color=theme.PROXY_COLOR,
         label="mean peak_gpu_mem_mb",
     )
     ax2.set_ylabel("mean peak_gpu_mem_mb")
-    ax1.set_title("Finetune cost vs head width")
+    ax1.set_title(f"{tl} cost vs head width")
     lines = ax1.get_lines() + ax2.get_lines()
     ax1.legend(lines, [ln.get_label() for ln in lines], loc="best")
     return _save(fig, out_dir, "cost_vs_head")
@@ -483,10 +489,10 @@ def plot_cost_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
 
 
 def plot_epochs_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(#3) Grouped bar: mean frozen vs finetune epochs per head; annotate frozen cap.
+    """(#3) Grouped bar: mean proxy vs reference epochs per head; annotate proxy cap.
 
-    → ``epochs_vs_head.png``. Shows where early-stopping kicks in (frozen) vs where the
-    full budget is consumed (finetune).
+    → ``epochs_vs_head.png``. Shows where early-stopping kicks in (proxy) vs where the
+    full budget is consumed (reference/finetune).
     """
     from mlsys.analysis.tables import epochs_table
 
@@ -501,43 +507,44 @@ def plot_epochs_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
 
     heads = et["head"].tolist()
     x = range(len(heads))
-    mean_fz = et["mean_frozen_epochs"].tolist()
-    mean_ft = et["mean_finetune_epochs"].tolist()
-    cap = et["frozen_cap"].iloc[0] if "frozen_cap" in et.columns else None
+    mean_fz = et["mean_proxy_epochs"].tolist()
+    mean_ft = et["mean_ref_epochs"].tolist()
+    cap = et["proxy_cap"].iloc[0] if "proxy_cap" in et.columns else None
 
     fig, ax = plt.subplots(figsize=(max(6, len(heads) * 1.5), 5))
     width = 0.35
+    pl, tl = _pass_labels(triples)
     ax.bar(
         [i - width / 2 for i in x],
         mean_fz,
         width,
-        label="mean frozen epochs",
-        color=theme.PASS_COLORS["frozen"],
+        label=f"mean {pl} epochs",
+        color=theme.PROXY_COLOR,
     )
     ax.bar(
         [i + width / 2 for i in x],
         mean_ft,
         width,
-        label="mean finetune epochs",
-        color=theme.PASS_COLORS["finetune"],
+        label=f"mean {tl} epochs",
+        color=theme.REFERENCE_COLOR,
     )
     if cap is not None and not (isinstance(cap, float) and cap != cap):
         ax.axhline(
             cap,
             color=theme.STATUS_COLORS["diverged"],
             linestyle="--",
-            label=f"frozen cap = {int(cap)}",
+            label=f"proxy cap = {int(cap)}",
         )
     ax.set_xticks(list(x))
     ax.set_xticklabels(heads)
     ax.set_ylabel("mean epochs")
-    ax.set_title("Early-stopping epochs: frozen vs finetune per head")
+    ax.set_title(f"Early-stopping epochs: {pl} vs {tl} per head")
     ax.legend()
     return _save(fig, out_dir, "epochs_vs_head")
 
 
 def plot_head_rank_agreement(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(#4) Heatmap of the head x head Spearman rho matrix over frozen r2.
+    """(#4) Heatmap of the head x head Spearman rho matrix over proxy r2.
 
     -> ``head_rank_agreement.png``. Low off-diagonal rho means head choice changes the proxy
     ranking substantially.
@@ -559,14 +566,14 @@ def plot_head_rank_agreement(triples: list[Triple], out_dir: str | Path) -> Path
         ax=ax,
         cbar_kws={"label": "Spearman rho"},
     )
-    ax.set_title("Head x head proxy-rank agreement (Spearman rho over frozen r2)")
+    ax.set_title("Head x head proxy-rank agreement (Spearman rho over proxy r2)")
     return _save(fig, out_dir, "head_rank_agreement")
 
 
-def plot_frozen_timing_share(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(#5) Horizontal 100%-stacked bar: frozen timing substep % share per head.
+def plot_proxy_timing_share(triples: list[Triple], out_dir: str | Path) -> Path:
+    """(#5) Horizontal 100%-stacked bar: proxy pass timing substep % share per head.
 
-    -> ``frozen_timing_share.png``. The deck's exact viz -- shows inference dominates 58-65%.
+    -> ``proxy_timing_share.png``. The deck's exact viz -- shows inference dominates 58-65%.
     """
     from mlsys.analysis.tables import frozen_timing_share_table
     from mlsys.analysis.theme import SUBSTEP_COLORS, SUBSTEP_HATCHES
@@ -576,7 +583,7 @@ def plot_frozen_timing_share(triples: list[Triple], out_dir: str | Path) -> Path
     if ft_table.empty:
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.text(0.5, 0.5, "no timing data", ha="center", va="center", transform=ax.transAxes)
-        return _save(fig, out_dir, "frozen_timing_share")
+        return _save(fig, out_dir, "proxy_timing_share")
 
     pct_cols = [
         "prepare_model_pct",
@@ -606,14 +613,14 @@ def plot_frozen_timing_share(triples: list[Triple], out_dir: str | Path) -> Path
                 ax.text(offset + v / 2, j, f"{v:.0f}%", ha="center", va="center", fontsize=8)
         left += vals
     ax.set_xlim(0, 100)
-    ax.set_xlabel("% of total frozen wall-time")
-    ax.set_title("Frozen timing substep share per head")
+    ax.set_xlabel("% of total proxy wall-time")
+    ax.set_title("Proxy timing substep share per head")
     ax.legend(loc="lower right", fontsize=8)
-    return _save(fig, out_dir, "frozen_timing_share")
+    return _save(fig, out_dir, "proxy_timing_share")
 
 
 def plot_value_frontier(triples: list[Triple], out_dir: str | Path) -> Path:
-    """(#6) Scatter: frozen inference_s (x) vs frozen r² (y) at the widest head.
+    """(#6) Scatter: proxy inference_s (x) vs proxy r² (y) at the widest head.
 
     → ``value_frontier.png``. Models annotated with their name. Shows the inference-cost vs
     quality trade-off for the backbone pool. Uses the widest head — inference_s is
@@ -631,22 +638,22 @@ def plot_value_frontier(triples: list[Triple], out_dir: str | Path) -> Path:
     widest_head = triples[-1].head if triples else "widest"
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.scatter(
-        vf["frozen_inference_s"],
-        vf["frozen_r2"],
-        color=theme.PASS_COLORS["frozen"],
-        marker=theme.PASS_MARKERS["frozen"],
+        vf["proxy_inference_s"],
+        vf["proxy_r2"],
+        color=theme.PROXY_COLOR,
+        marker=theme.PROXY_MARKER,
         s=70,
         zorder=3,
     )
     for _, row in vf.iterrows():
         ax.annotate(
             str(row["model"]),
-            (row["frozen_inference_s"], row["frozen_r2"]),
+            (row["proxy_inference_s"], row["proxy_r2"]),
             fontsize=7,
             xytext=(4, 4),
             textcoords="offset points",
         )
-    ax.set_xlabel("frozen inference_s (backbone encode cost, head-independent)")
-    ax.set_ylabel("frozen r²")
+    ax.set_xlabel("proxy inference_s (backbone encode cost, head-independent)")
+    ax.set_ylabel("proxy r²")
     ax.set_title(f"Inference value-frontier — widest head ({widest_head})")
     return _save(fig, out_dir, "value_frontier")

@@ -135,7 +135,7 @@ adapting model search to regression; RQ2 = how bottlenecks shift.
 | File | Shows | Serves |
 | --- | --- | --- |
 | `tables.csv` / `tables.md` | per-model proxy/reference r²,mse,mae,spearman, Δ, skipped/diverged flags, epochs, costs | RQ1 + RQ2 |
-| `r2_proxy_vs_gt.png` | grouped bars, proxy vs reference r² per model | §1/§2 |
+| `r2_proxy_vs_reference.png` | grouped bars, proxy vs reference r² per model | §1/§2 |
 | `proxy_scatter.png` | proxy-r² vs reference-r² with y=x; skipped/diverged coloured | RQ1 |
 | `r2_delta.png` | diverging bars of Δ = reference − proxy r² | §3 |
 | `regret_curve.png` | regret + normalized_regret vs budget B | §4 |
@@ -154,7 +154,7 @@ adapting model search to regression; RQ2 = how bottlenecks shift.
 | `cost_table.*` | per-(head,model) proxy total, reference total, peak mem, epochs | RQ2 |
 | `proxy_distribution.*` | per-head proxy r² mean/std/min/max/n_negative — spread-collapse story | §7.1 |
 | `head_gain.*` | per-model Δ proxy r² narrowest→widest head — biggest gainers | §7.2 |
-| `epochs_table.*` | per-head mean proxy/gt epochs, n-at-cap, cap | §7.3 |
+| `epochs_table.*` | per-head mean proxy/reference epochs, n-at-cap, cap | §7.3 |
 | `head_rank_agreement.*` | head × head Spearman ρ over proxy r² | §7.4 |
 | `proxy_timing_share.*` | per-head % share of each timing substep | §7.5 |
 | `value_frontier.*` | proxy inference_s vs r² at the widest head | §7.6 |
@@ -165,7 +165,7 @@ adapting model search to regression; RQ2 = how bottlenecks shift.
 | `divergence_map.png` | binary model × head map of `diverged` (reference r² < 0) | RQ1 |
 | `proxy_rank_spearman_vs_head.png` | Spearman(proxy rank, reference rank) per head | RQ1 |
 | `cost_vs_head.png` | mean reference `train_head_s` & `peak_gpu_mem_mb` vs head width | RQ2 (R4) |
-| `epochs_vs_head.png` | mean proxy vs gt epochs per head; annotated proxy cap | §7.3 |
+| `epochs_vs_head.png` | mean proxy vs reference epochs per head; annotated proxy cap | §7.3 |
 | `head_rank_agreement.png` | heatmap of head × head Spearman ρ matrix | §7.4 |
 | `proxy_timing_share.png` | horizontal 100%-stacked bar: substep % share per head | §7.5 |
 | `value_frontier.png` | scatter: proxy inference_s vs r² at the widest head, annotated | §7.6 |

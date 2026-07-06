@@ -148,12 +148,15 @@ def _build_per_head(triple: Triple, out_dir: Path) -> PerHead:
         "r2_proxy_vs_reference": plots.plot_r2_proxy_vs_reference(triple, head_dir),
         "proxy_scatter": plots.plot_proxy_scatter(triple, head_dir),
         "r2_delta": plots.plot_r2_delta(triple, head_dir),
-        "regret_curve": plots.plot_regret_curve(triple, head_dir),
         "ref_spearman_vs_r2": plots.plot_ref_spearman_vs_r2(triple, head_dir),
         "timing_stacked": plots.plot_timing_stacked(triple, head_dir),
         "peak_gpu_mem": plots.plot_peak_gpu_mem(triple, head_dir),
         "proxy_time_breakdown": plots.plot_proxy_time_breakdown(triple, head_dir),
     }
+    # regret is only meaningful for genuine proxy-vs-finetune pairs — skip the orphan plot for
+    # same-strategy pairs (e.g. r1/r3) where it'd otherwise be generated but never rendered.
+    if triple.role_pair.supports_regret:
+        png["regret_curve"] = plots.plot_regret_curve(triple, head_dir)
     return PerHead(table=table, summary=summary, png=png, dir=head_dir)
 
 
@@ -170,7 +173,9 @@ def _build_comparison(triples: list[Triple], out_dir: Path) -> Comparison:
     tables.write_table(proxy_matrix, comp_dir / "proxy_r2_matrix")
     tables.write_table(reference_matrix, comp_dir / "reference_r2_matrix")
     tables.write_table(per_head, comp_dir / "per_head_summary")
-    tables.write_table(diverged, comp_dir / "diverged_models")
+    supports_divergence = any(t.role_pair.supports_divergence for t in triples)
+    if supports_divergence:
+        tables.write_table(diverged, comp_dir / "diverged_models")
     tables.write_table(cost, comp_dir / "cost_table")
 
     # §7 tables
@@ -193,7 +198,6 @@ def _build_comparison(triples: list[Triple], out_dir: Path) -> Comparison:
         "best_r2_vs_head": plots.plot_best_r2_vs_head(triples, comp_dir),
         "heatmap_proxy_r2": plots.plot_heatmap_proxy_r2(triples, comp_dir),
         "heatmap_ref_r2": plots.plot_heatmap_ref_r2(triples, comp_dir),
-        "divergence_map": plots.plot_divergence_map(triples, comp_dir),
         "proxy_rank_spearman_vs_head": plots.plot_proxy_rank_spearman_vs_head(triples, comp_dir),
         "cost_vs_head": plots.plot_cost_vs_head(triples, comp_dir),
         # §7 plots
@@ -202,6 +206,10 @@ def _build_comparison(triples: list[Triple], out_dir: Path) -> Comparison:
         "proxy_timing_share": plots.plot_proxy_timing_share(triples, comp_dir),
         "value_frontier": plots.plot_value_frontier(triples, comp_dir),
     }
+    # divergence (finetune r² < 0) is structurally impossible for a frozen head-fit reference
+    # pass — skip the orphan plot for pairs that don't support it (e.g. r1/r3).
+    if supports_divergence:
+        png["divergence_map"] = plots.plot_divergence_map(triples, comp_dir)
     return Comparison(
         dir=comp_dir,
         png=png,
@@ -297,7 +305,8 @@ def _assemble_summary(
     cpng = comparison.png
     parts.append(_img(cpng["heatmap_proxy_r2"], out_dir))
     parts.append(_img(cpng["heatmap_ref_r2"], out_dir))
-    parts.append(_img(cpng["divergence_map"], out_dir))
+    if "divergence_map" in cpng:
+        parts.append(_img(cpng["divergence_map"], out_dir))
     parts.append(_img(cpng["best_r2_vs_head"], out_dir))
     for t in triples:
         parts.append(_img(per_head[t.head].png["r2_delta"], out_dir))
@@ -311,7 +320,8 @@ def _assemble_summary(
         parts.append(_img(cpng["regret_at1_vs_head"], out_dir))
         parts.append(_img(cpng["proxy_rank_spearman_vs_head"], out_dir))
         for t in triples:
-            parts.append(_img(per_head[t.head].png["regret_curve"], out_dir))
+            if "regret_curve" in per_head[t.head].png:
+                parts.append(_img(per_head[t.head].png["regret_curve"], out_dir))
 
     # 5. RQ2 bottlenecks
     parts.append("\n## 5. RQ2 — bottlenecks (timing + GPU memory)\n")

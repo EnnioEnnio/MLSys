@@ -34,7 +34,7 @@
 
 ## Metrics
 
-- No one settled metric
+- No single settled metric
 - Most widely used: N-grams (ROUGE, BLEU) — acknowledged inadequate, correlation with human judgment varies a lot by dataset (e.g. Rouge-L: 0.72 relevance correlation on CNN/DM, drops to 0.30 on XSum) [7]
 - Dominant: ROUGE, BLEU, BERTScore — correlate poorly with human judgment, especially on abstractive (XSum-style) output [7]
 - BLEURT — often the strongest single automatic metric for human-judgment correlation (esp. faithfulness/relevance) [8], though still dataset-dependent (strong on CNN/DM, weak on XSum faithfulness) [7]

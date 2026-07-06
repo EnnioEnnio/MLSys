@@ -31,7 +31,51 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-KINDS = ("frozen", "finetune", "regret")
+KINDS = ("frozen", "finetune", "regret", "r1", "r3")
+
+
+@dataclass(frozen=True)
+class RolePair:
+    """Metadata for a (proxy, reference) pass pair used in a two-pass analysis run.
+
+    ``supports_regret`` is True only for genuine proxy-vs-ground-truth pairs (frozen/finetune):
+    regret presupposes different strategies, so computing it for same-strategy pairs like
+    (r1, r3) produces all-zero curves by construction.
+
+    ``supports_divergence`` is True only when the reference pass is a finetune run: backbone
+    divergence (r² < 0 due to training instability) cannot occur during a frozen head-fit.
+    """
+
+    proxy_kind: str
+    reference_kind: str
+    proxy_label: str
+    reference_label: str
+    supports_regret: bool
+    supports_divergence: bool
+
+
+# First matching pair wins (insertion order). Add new pairs here; no other file needs editing.
+# ("frozen", "finetune") is the only genuine proxy-vs-ground-truth pair.
+# ("r1", "r3") is a same-strategy variance comparison — both passes are frozen proxies;
+# r3 is a lower-variance estimate of the same signal as r1, NOT ground truth.
+_ROLE_PAIRS: list[RolePair] = [
+    RolePair(
+        "frozen",
+        "finetune",
+        "frozen",
+        "finetune",
+        supports_regret=True,
+        supports_divergence=True,
+    ),
+    RolePair(
+        "r1",
+        "r3",
+        "repeat=1",
+        "repeat=3",
+        supports_regret=False,
+        supports_divergence=False,
+    ),
+]
 
 _FILENAME_GRAMMAR = "<runid>_<dataset>_<strategy>_<num>_model_<HEAD>_<kind>.csv"
 _EXAMPLE_NAME = "2296342_wine_reviews_fulleval_16_model_MLP_512_frozen.csv"
@@ -103,21 +147,38 @@ class Triple:
     """One head config's loaded frames + the per-model flags derived from them.
 
     ``regret`` is ``None`` when no ``*_regret.csv`` was present; callers recompute it.
-    ``diverged`` / ``finetune_skipped`` are model→bool maps keyed on the model name.
+    ``diverged`` / ``ref_skipped`` are model→bool maps keyed on the model name; both are empty
+    for non-finetune pairs (backbone divergence and finetune-skip detection only apply to a real
+    finetune pass).
+    ``role_pair`` carries display labels and capability flags for the two passes.  Use
+    ``triple.proxy_label`` / ``triple.reference_label`` for display; use
+    ``triple.role_pair.supports_regret`` / ``triple.role_pair.supports_divergence`` to gate
+    metrics that only make sense for genuine proxy-vs-finetune pairs.
+    ``.reference`` is NOT always ground truth — for same-strategy pairs like (r1, r3) it is a
+    lower-variance frozen proxy, not a finetune signal.
     """
 
     run_id: str
     head: str
-    frozen: pd.DataFrame
-    finetune: pd.DataFrame
+    proxy: pd.DataFrame
+    reference: pd.DataFrame
     regret: pd.DataFrame | None
     diverged: dict[str, bool]
-    finetune_skipped: dict[str, bool]
+    ref_skipped: dict[str, bool]
+    role_pair: RolePair
+
+    @property
+    def proxy_label(self) -> str:
+        return self.role_pair.proxy_label
+
+    @property
+    def reference_label(self) -> str:
+        return self.role_pair.reference_label
 
     @property
     def models(self) -> list[str]:
-        """Models in frozen-CSV row order (the stable tie-break basis for the proxy rank)."""
-        return list(self.frozen["model"])
+        """Models in proxy-CSV row order (the stable tie-break basis for the proxy rank)."""
+        return list(self.proxy["model"])
 
 
 @dataclass
@@ -171,7 +232,7 @@ def _flag_diverged(finetune: pd.DataFrame, skipped: dict[str, bool]) -> dict[str
     }
 
 
-def _flag_finetune_skipped(finetune: pd.DataFrame) -> dict[str, bool]:
+def _flag_ref_skipped(ref_df: pd.DataFrame) -> dict[str, bool]:
     """Detect model2vec ``can_finetune=False`` fallbacks (frozen score reused as finetune).
 
     Construction-invariant signal: a *real* finetune fuses inference into the joint loop so
@@ -180,13 +241,17 @@ def _flag_finetune_skipped(finetune: pd.DataFrame) -> dict[str, bool]:
     same ``early_stop_patience`` early-stopping as the frozen head, so a real finetune does
     *not* run a fixed budget and any epoch-count check would just flag every early-stopped
     model. ``inference_s`` alone is the reliable signal.
+
+    Only meaningful for a genuine finetune reference pass (``role_pair.supports_divergence``).
+    For frozen-vs-frozen pairs both passes always have ``inference_s > 0``, so the flag would
+    fire for every model — callers must not call this for non-finetune pairs.
     """
-    inference = finetune["inference_s"] if "inference_s" in finetune.columns else None
+    inference = ref_df["inference_s"] if "inference_s" in ref_df.columns else None
     return {
         str(model): bool(inf > 0.0)
         for model, inf in zip(
-            finetune["model"],
-            inference if inference is not None else [0.0] * len(finetune),
+            ref_df["model"],
+            inference if inference is not None else [0.0] * len(ref_df),
             strict=True,
         )
     }
@@ -209,35 +274,60 @@ def _crosscheck_head_type(df: pd.DataFrame, head: str, kind: str) -> None:
         )
 
 
+def resolve_role_pair(paths: dict[str, Path]) -> RolePair | None:
+    """Return the :class:`RolePair` for the pair present in ``paths``, or ``None``.
+
+    Iterates :data:`_ROLE_PAIRS` in insertion order so the first matching pair wins.
+    """
+    for role in _ROLE_PAIRS:
+        if role.proxy_kind in paths and role.reference_kind in paths:
+            return role
+    return None
+
+
 def load_triple(tf: _TripleFiles) -> Triple:
     """Load a discovered triple's frames + derive the per-model flags.
 
-    Requires both frozen and finetune frames (the per-triple analysis needs the pair). Use
-    :func:`discover_triples` ahead of this; callers that tolerate a half-present head should
-    check ``"frozen" in tf.paths and "finetune" in tf.paths`` first.
+    Accepts any recognised proxy/reference kind pair (see :data:`_ROLE_PAIRS`): the standard
+    ``frozen`` + ``finetune`` pair for a ``full_eval`` run, or ``r1`` + ``r3`` for a
+    frozen repeat-count comparison. Internally the DataFrames are always stored as
+    ``.proxy`` (cheap pass) and ``.reference`` (second pass — only ground truth for the
+    finetune kind); display labels and capability flags come from ``Triple.role_pair``.
+
+    Use :func:`discover_triples` ahead of this; callers that tolerate missing heads should
+    check ``resolve_role_pair(tf.paths) is not None`` first.
     """
     import pandas as pd
 
-    if "frozen" not in tf.paths or "finetune" not in tf.paths:
-        missing = [k for k in ("frozen", "finetune") if k not in tf.paths]
+    role = resolve_role_pair(tf.paths)
+    if role is None:
+        available = sorted(tf.paths)
         raise FileNotFoundError(
-            f"run-id {tf.run_id} (head {tf.head}) is missing {missing}; cannot load triple"
+            f"run-id {tf.run_id} (head {tf.head}) has kinds {available} but no recognised "
+            f"proxy/reference pair; expected one of "
+            f"{[(r.proxy_kind, r.reference_kind) for r in _ROLE_PAIRS]}"
         )
 
-    frozen = pd.read_csv(tf.paths["frozen"])
-    finetune = pd.read_csv(tf.paths["finetune"])
+    proxy_df = pd.read_csv(tf.paths[role.proxy_kind])
+    ref_df = pd.read_csv(tf.paths[role.reference_kind])
     regret = pd.read_csv(tf.paths["regret"]) if "regret" in tf.paths else None
 
-    _crosscheck_head_type(frozen, tf.head, "frozen")
-    _crosscheck_head_type(finetune, tf.head, "finetune")
+    _crosscheck_head_type(proxy_df, tf.head, role.proxy_kind)
+    _crosscheck_head_type(ref_df, tf.head, role.reference_kind)
 
-    skipped = _flag_finetune_skipped(finetune)
+    # Both flags are finetune-specific: ref_skipped detects model2vec fallbacks via
+    # inference_s > 0 (only meaningful when inference is fused → 0 in a real finetune);
+    # diverged detects backbone training instability (r2 < 0 after fine-tuning).
+    # For frozen-vs-frozen pairs (r1/r3) both signals are meaningless — leave them empty.
+    skipped = _flag_ref_skipped(ref_df) if role.supports_divergence else {}
+    diverged = _flag_diverged(ref_df, skipped) if role.supports_divergence else {}
     return Triple(
         run_id=tf.run_id,
         head=tf.head,
-        frozen=frozen,
-        finetune=finetune,
+        proxy=proxy_df,
+        reference=ref_df,
         regret=regret,
-        diverged=_flag_diverged(finetune, skipped),
-        finetune_skipped=skipped,
+        diverged=diverged,
+        ref_skipped=skipped,
+        role_pair=role,
     )

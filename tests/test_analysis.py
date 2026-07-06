@@ -68,6 +68,43 @@ def _row(
     }
 
 
+def _write_repeat_pair(
+    folder: Path,
+    run_id: str,
+    head: str,
+    *,
+    with_regret: bool,
+    head_type="mlp",
+):
+    """Write an r1+r3 (+optional regret) CSV pair for a frozen repeat-count comparison."""
+    import pandas as pd
+
+    # r1: repeat=1 frozen proxy; r3: repeat=3 frozen proxy (lower variance, NOT ground truth).
+    # Same model pool as _write_triple but both passes are "frozen" (inference_s > 0 for both).
+    r1_rows = [
+        _row("alpha", 0.48, inference_s=10, train_head_s=5, epochs_run=20, strategy="frozen"),
+        _row("beta", 0.38, inference_s=10, train_head_s=5, epochs_run=20, strategy="frozen"),
+        _row("gamma", 0.28, inference_s=10, train_head_s=5, epochs_run=20, strategy="frozen"),
+        _row("m2v", 0.18, inference_s=2, train_head_s=5, epochs_run=20, strategy="frozen"),
+    ]
+    r3_rows = [
+        _row("alpha", 0.50, inference_s=10, train_head_s=15, epochs_run=20, strategy="frozen"),
+        _row("beta", 0.40, inference_s=10, train_head_s=15, epochs_run=20, strategy="frozen"),
+        _row("gamma", 0.30, inference_s=10, train_head_s=15, epochs_run=20, strategy="frozen"),
+        _row("m2v", 0.20, inference_s=2, train_head_s=15, epochs_run=20, strategy="frozen"),
+    ]
+    for kind, rows in (("r1", r1_rows), ("r3", r3_rows)):
+        for r in rows:
+            r["head_type"] = head_type
+        df = pd.DataFrame(rows, columns=_COLS)
+        df.to_csv(folder / f"{run_id}_wine_reviews_frozen_4_model_{head}_{kind}.csv", index=False)
+    if with_regret:
+        from mlsys.analysis.regret_recompute import recompute_regret
+
+        rc = recompute_regret(pd.DataFrame(r1_rows), pd.DataFrame(r3_rows))
+        rc.to_csv(folder / f"{run_id}_wine_reviews_frozen_4_model_{head}_regret.csv", index=False)
+
+
 def _write_triple(
     folder: Path,
     run_id: str,
@@ -189,6 +226,13 @@ def test_parse_filename_single_token_dataset():
     assert (p.run_id, p.dataset, p.strategy, p.num) == ("42", "wine", "frozen", "8")
 
 
+def test_parse_filename_r1_r3():
+    p = parse_filename("exp001_wine_reviews_frozen_4_model_FCH_r1.csv")
+    assert (p.run_id, p.head, p.kind) == ("exp001", "FCH", "r1")
+    p3 = parse_filename("exp001_wine_reviews_frozen_4_model_MLP_256_r3.csv")
+    assert (p3.run_id, p3.head, p3.kind) == ("exp001", "MLP_256", "r3")
+
+
 def test_parse_filename_rejects_bad_name():
     with pytest.raises(ValueError, match="grammar"):
         parse_filename("garbage.csv")
@@ -223,7 +267,7 @@ def test_load_triple_flags_diverged_and_skipped(tmp_path):
     assert "regret" not in tf.paths  # missing-regret case
     triple = loader.load_triple(tf)
     assert triple.diverged == {"alpha": True, "beta": False, "gamma": False, "m2v": False}
-    assert triple.finetune_skipped == {
+    assert triple.ref_skipped == {
         "alpha": False,
         "beta": False,
         "gamma": False,
@@ -282,7 +326,7 @@ def test_table_builders_on_tiny_frames(tmp_path):
     assert "delta_r2" in per.columns
 
     summary = tables.per_triple_summary(triple)
-    assert summary.best_finetune_model == "beta"  # 0.70 is max finetune r2
+    assert summary.best_ref_model == "beta"  # 0.70 is max ref r2
     assert summary.n_diverged == 1
     assert 1 <= summary.budget_to_zero <= len(triple.models)
 
@@ -305,10 +349,10 @@ def test_frozen_distribution_table(tmp_path):
     df = tables.frozen_distribution_table(triples)
     expected_cols = [
         "head",
-        "mean_frozen_r2",
-        "std_frozen_r2",
-        "min_frozen_r2",
-        "max_frozen_r2",
+        "mean_proxy_r2",
+        "std_proxy_r2",
+        "min_proxy_r2",
+        "max_proxy_r2",
         "n_negative",
     ]
     assert list(df.columns) == expected_cols
@@ -320,7 +364,7 @@ def test_frozen_distribution_table(tmp_path):
     expected_std = math.sqrt((0.0225 + 0.0025 + 0.0025 + 0.0225) / 4)
     import pytest as _pytest
 
-    actual = df.loc[df["head"] == "FCH", "std_frozen_r2"].iloc[0]
+    actual = df.loc[df["head"] == "FCH", "std_proxy_r2"].iloc[0]
     assert actual == _pytest.approx(expected_std, abs=1e-6)
 
 
@@ -352,15 +396,15 @@ def test_epochs_table(tmp_path):
     df = tables.epochs_table(triples)
     assert set(df.columns) >= {
         "head",
-        "mean_frozen_epochs",
-        "n_frozen_at_cap",
-        "frozen_cap",
-        "mean_finetune_epochs",
+        "mean_proxy_epochs",
+        "n_proxy_at_cap",
+        "proxy_cap",
+        "mean_ref_epochs",
     }
     assert len(df) == 2
     # All frozen rows have epochs_run=20, cap=20 → n_frozen_at_cap=4 (all 4 models hit cap)
-    assert df["frozen_cap"].iloc[0] == 20
-    assert df.loc[df["head"] == "FCH", "n_frozen_at_cap"].iloc[0] == 4
+    assert df["proxy_cap"].iloc[0] == 20
+    assert df.loc[df["head"] == "FCH", "n_proxy_at_cap"].iloc[0] == 4
 
 
 def test_head_rank_agreement_matrix(tmp_path):
@@ -419,10 +463,10 @@ def test_value_frontier_table(tmp_path):
     df = tables.value_frontier_table(triples)
     assert set(df.columns) >= {
         "model",
-        "frozen_inference_s",
-        "frozen_r2",
-        "finetune_r2",
-        "frozen_peak_gpu_mem_mb",
+        "proxy_inference_s",
+        "proxy_r2",
+        "ref_r2",
+        "proxy_peak_gpu_mem_mb",
     }
     assert len(df) == 4  # 4 models, widest head
     # Sorted by inference_s asc: m2v (2s) should appear before alpha/beta/gamma (10s)
@@ -438,8 +482,8 @@ def test_per_triple_table_has_frozen_epochs(tmp_path):
     triple = loader.load_triple(tf)
 
     df = tables.per_triple_table(triple)
-    assert "frozen_epochs" in df.columns
-    assert list(df["frozen_epochs"]) == [20, 20, 20, 20]
+    assert "proxy_epochs" in df.columns
+    assert list(df["proxy_epochs"]) == [20, 20, 20, 20]
 
 
 # ----------------------------------------------------------------- plot smoke
@@ -456,7 +500,7 @@ def test_plot_smoke_savefig(tmp_path):
     out = tmp_path / "plots"
     p = plots.plot_regret_curve(triple, out)
     assert p.exists() and p.stat().st_size > 0
-    p2 = plots.plot_heatmap_frozen_r2([triple], out)
+    p2 = plots.plot_heatmap_proxy_r2([triple], out)
     assert p2.exists() and p2.stat().st_size > 0
 
 
@@ -478,11 +522,49 @@ def test_new_plots_smoke(tmp_path):
     p_rank = plots.plot_head_rank_agreement(triples, out)
     assert p_rank.exists() and p_rank.stat().st_size > 0
 
-    p_timing = plots.plot_frozen_timing_share(triples, out)
+    p_timing = plots.plot_proxy_timing_share(triples, out)
     assert p_timing.exists() and p_timing.stat().st_size > 0
 
     p_frontier = plots.plot_value_frontier(triples, out)
     assert p_frontier.exists() and p_frontier.stat().st_size > 0
+
+
+# ----------------------------------------------------------------- r1/r3 repeat comparison
+
+
+def test_load_triple_r1_r3_labels(tmp_path):
+    """r1+r3 pair → correct labels, empty flags, supports_regret/supports_divergence False."""
+    pytest.importorskip("pandas")
+    _write_repeat_pair(tmp_path, "exp001", "FCH", with_regret=False, head_type="linear")
+    (tf,) = loader.discover_triples(tmp_path)
+    assert tf.paths.keys() >= {"r1", "r3"}
+    triple = loader.load_triple(tf)
+    assert triple.proxy_label == "repeat=1"
+    assert triple.reference_label == "repeat=3"
+    # Both capability flags must be False: r3 is a frozen proxy, not ground truth.
+    assert triple.role_pair.supports_regret is False
+    assert triple.role_pair.supports_divergence is False
+    # ref_skipped must be empty — both passes are frozen (inference_s > 0 for all)
+    assert triple.ref_skipped == {}
+    # diverged is empty for frozen-vs-frozen pairs — backbone divergence only applies to finetune
+    assert triple.diverged == {}
+
+
+def test_cli_analyze_r1_r3_smoke(tmp_path):
+    """Full analyze pipeline works end-to-end for a frozen r1/r3 repeat comparison."""
+    pytest.importorskip("pandas")
+    pytest.importorskip("seaborn")
+    from mlsys.cli import main
+
+    _write_repeat_pair(tmp_path, "exp001", "FCH", with_regret=False, head_type="linear")
+    rc = main(["analyze", str(tmp_path)])
+    assert rc == 0
+    out = tmp_path / "analysis"
+    summary = (out / "SUMMARY.md").read_text()
+    assert "repeat=1" in summary
+    assert "repeat=3" in summary
+    # Regret is NOT computed for same-strategy pairs — the all-zero curve is not a finding.
+    assert not (tmp_path / "exp001_wine_reviews_frozen_4_model_FCH_regret.csv").exists()
 
 
 # ----------------------------------------------------------------- CLI smokes

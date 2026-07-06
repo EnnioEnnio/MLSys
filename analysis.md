@@ -134,41 +134,41 @@ adapting model search to regression; RQ2 = how bottlenecks shift.
 
 | File | Shows | Serves |
 | --- | --- | --- |
-| `tables.csv` / `tables.md` | per-model frozen/finetune r²,mse,mae,spearman, Δ, skipped/diverged flags, epochs, costs | RQ1 + RQ2 |
-| `r2_frozen_vs_finetune.png` | grouped bars, frozen vs finetune r² per model | §1/§2 |
-| `proxy_scatter.png` | frozen-r² (proxy) vs finetune-r² with y=x; skipped/diverged coloured | RQ1 |
-| `r2_delta.png` | diverging bars of Δ = finetune − frozen r² | §3 |
+| `tables.csv` / `tables.md` | per-model proxy/reference r²,mse,mae,spearman, Δ, skipped/diverged flags, epochs, costs | RQ1 + RQ2 |
+| `r2_proxy_vs_reference.png` | grouped bars, proxy vs reference r² per model | §1/§2 |
+| `proxy_scatter.png` | proxy-r² vs reference-r² with y=x; skipped/diverged coloured | RQ1 |
+| `r2_delta.png` | diverging bars of Δ = reference − proxy r² | §3 |
 | `regret_curve.png` | regret + normalized_regret vs budget B | §4 |
-| `finetune_spearman_vs_r2.png` | finetune Spearman vs r² — "rank kept, scale broken" | §2 / RQ1 |
-| `timing_stacked.png` | stacked substep timing, frozen vs finetune side-by-side | RQ2 (R1) |
-| `peak_gpu_mem.png` | peak GPU memory, frozen vs finetune | RQ2 (R2) |
-| `frozen_time_breakdown.png` | frozen `inference_s` vs `train_head_s` share | RQ2 (R3) |
+| `ref_spearman_vs_r2.png` | reference Spearman vs r² — "rank kept, scale broken" | §2 / RQ1 |
+| `timing_stacked.png` | stacked substep timing, proxy vs reference side-by-side | RQ2 (R1) |
+| `peak_gpu_mem.png` | peak GPU memory, proxy vs reference | RQ2 (R2) |
+| `proxy_time_breakdown.png` | proxy `inference_s` vs `train_head_s` share | RQ2 (R3) |
 
 ### Comparison (`analysis/comparison/`)
 
 | File | Shows | Serves |
 | --- | --- | --- |
 | `per_head_summary.csv/.md` | one row per head: best r², regret@1, budget-to-zero, rank-ρ, counts | all |
-| `frozen_r2_matrix.*` / `finetune_r2_matrix.*` | model × head r² tables | §3 |
-| `diverged_models.*` | every diverged model's frozen→finetune r² + finetune ρ per head | §6 / RQ1 |
-| `cost_table.*` | per-(head,model) frozen total, finetune total, peak mem, epochs | RQ2 |
-| `frozen_distribution.*` | per-head frozen r² mean/std/min/max/n_negative — spread-collapse story | §7.1 |
-| `head_gain.*` | per-model Δ frozen r² narrowest→widest head — biggest gainers | §7.2 |
-| `epochs_table.*` | per-head mean frozen/finetune epochs, n-at-cap, cap | §7.3 |
-| `head_rank_agreement.*` | head × head Spearman ρ over frozen r² | §7.4 |
-| `frozen_timing_share.*` | per-head % share of each timing substep | §7.5 |
-| `value_frontier.*` | frozen inference_s vs r² at the widest head | §7.6 |
+| `proxy_r2_matrix.*` / `reference_r2_matrix.*` | model × head r² tables | §3 |
+| `diverged_models.*` | every diverged model's proxy→reference r² + reference ρ per head | §6 / RQ1 |
+| `cost_table.*` | per-(head,model) proxy total, reference total, peak mem, epochs | RQ2 |
+| `proxy_distribution.*` | per-head proxy r² mean/std/min/max/n_negative — spread-collapse story | §7.1 |
+| `head_gain.*` | per-model Δ proxy r² narrowest→widest head — biggest gainers | §7.2 |
+| `epochs_table.*` | per-head mean proxy/reference epochs, n-at-cap, cap | §7.3 |
+| `head_rank_agreement.*` | head × head Spearman ρ over proxy r² | §7.4 |
+| `proxy_timing_share.*` | per-head % share of each timing substep | §7.5 |
+| `value_frontier.*` | proxy inference_s vs r² at the widest head | §7.6 |
 | `regret_curves_by_head.png` | overlaid regret curves, one line per head | §4 |
 | `regret_at1_vs_head.png` | regret@1 / AUC / budget-to-zero vs head width | §4 |
-| `best_r2_vs_head.png` | best frozen & best finetune r² vs head width | §3 |
-| `heatmap_frozen_r2.png` / `heatmap_finetune_r2.png` | model × head r² heatmaps | §3 |
-| `divergence_map.png` | binary model × head map of `diverged` (finetune r² < 0) | RQ1 |
-| `proxy_rank_spearman_vs_head.png` | Spearman(frozen rank, finetune rank) per head | RQ1 |
-| `cost_vs_head.png` | mean finetune `train_head_s` & `peak_gpu_mem_mb` vs head width | RQ2 (R4) |
-| `epochs_vs_head.png` | mean frozen vs finetune epochs per head; annotated frozen cap | §7.3 |
+| `best_r2_vs_head.png` | best proxy & best reference r² vs head width | §3 |
+| `heatmap_proxy_r2.png` / `heatmap_ref_r2.png` | model × head r² heatmaps | §3 |
+| `divergence_map.png` | binary model × head map of `diverged` (reference r² < 0) | RQ1 |
+| `proxy_rank_spearman_vs_head.png` | Spearman(proxy rank, reference rank) per head | RQ1 |
+| `cost_vs_head.png` | mean reference `train_head_s` & `peak_gpu_mem_mb` vs head width | RQ2 (R4) |
+| `epochs_vs_head.png` | mean proxy vs reference epochs per head; annotated proxy cap | §7.3 |
 | `head_rank_agreement.png` | heatmap of head × head Spearman ρ matrix | §7.4 |
-| `frozen_timing_share.png` | horizontal 100%-stacked bar: substep % share per head | §7.5 |
-| `value_frontier.png` | scatter: frozen inference_s vs r² at the widest head, annotated | §7.6 |
+| `proxy_timing_share.png` | horizontal 100%-stacked bar: substep % share per head | §7.5 |
+| `value_frontier.png` | scatter: proxy inference_s vs r² at the widest head, annotated | §7.6 |
 
 ### RQ2 timing semantics (read the stacked bars correctly)
 

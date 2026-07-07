@@ -327,8 +327,20 @@ def _make_epoch_logger(model: str, strategy: str, wandb_run: object) -> EpochCal
     Keyed by ``<model>/<strategy>/{train,val}_mse`` so passes (frozen vs finetune) land on
     distinct series on the same run. For frozen's repeated heads all repeats stream under the
     same keys — the curves are a visual anchor; the averaged results table is authoritative.
+
+    Each model/pass gets its own ``<model>/<strategy>/epoch`` step-metric so its MSE curves
+    plot against that model's own 0-based epoch. Without this the charts default to W&B's
+    run-global auto-step, which keeps incrementing across models, so the next model's curve
+    would start where the previous one left off (e.g. step 25) instead of resetting to 0. The
+    plain ``epoch`` scalar is still logged for the single global epoch chart (x=step, y=epoch).
     """
     del wandb_run  # Presence already gated by the caller; the closure re-imports wandb.
+    import wandb  # type: ignore[import-not-found]
+
+    step_metric = f"{model}/{strategy}/epoch"
+    wandb.define_metric(step_metric)
+    wandb.define_metric(f"{model}/{strategy}/train_mse", step_metric=step_metric)
+    wandb.define_metric(f"{model}/{strategy}/val_mse", step_metric=step_metric)
 
     def _log(epoch: int, train_mse: float, val_mse: float) -> None:
         # Imported lazily so the unused-without-flag path stays free of the dep.
@@ -338,6 +350,7 @@ def _make_epoch_logger(model: str, strategy: str, wandb_run: object) -> EpochCal
             {
                 f"{model}/{strategy}/train_mse": train_mse,
                 f"{model}/{strategy}/val_mse": val_mse,
+                step_metric: epoch,
                 "epoch": epoch,
             }
         )

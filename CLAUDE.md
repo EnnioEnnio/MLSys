@@ -130,3 +130,7 @@ in via `can_finetune=True` on its adapter — model2vec is `False`). To add a mo
   `export` it before submitting; the `slurm/*.slurm` scripts forward via
   `--container-env`. Cluster entry point is `bash slurm/submit.sh` (job array +
   dependent consolidate); `slurm/search.slurm` is the single-node fallback.
+- **New CLI flag ⇒ wire it through `slurm/`**: add the env-var knob to
+  `submit.sh`, default + forward it in `array_search.slurm` (`--container-env`
+  list included), and document it in `slurm/README.md`. When reviewing a PR
+  that adds a flag, check this wiring — otherwise the scripts diverge.

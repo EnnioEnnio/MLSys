@@ -99,7 +99,7 @@ srun --container-name=$CONTAINER_NAME \
        --strategy $STRATEGY \
        --epochs 30 \
        --batch-size 64 \
-       --hidden 0 \
+       --hidden 256 \
        --device cuda \
        --head-repeats $HEAD_REPEATS \
        --output-dir /workspace/runs/$SLURM_JOB_ID \

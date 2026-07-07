@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from mlsys.head import FCHead, HeadTrainConfig, HeadTrainResult
+from mlsys.head import EpochCallback, FCHead, HeadTrainConfig, HeadTrainResult
 
 if TYPE_CHECKING:
     import torch
@@ -53,6 +53,7 @@ def train_full_model(
     head_cfg: HeadTrainConfig,
     finetune_cfg: FinetuneConfig,
     device: str,
+    epoch_callback: EpochCallback | None = None,
 ) -> HeadTrainResult:
     """Train ``backbone`` + ``head`` jointly with AdamW (two LR groups) + MSE, early-stopping
     on val MSE. The backbone is mutated in place and left in its best-val state; the trained
@@ -124,6 +125,8 @@ def train_full_model(
             val_pred = torch.cat(preds)
             val_mse = float(loss_fn(val_pred, y_val))
         val_curve.append(val_mse)
+        if epoch_callback is not None:
+            epoch_callback(epoch, train_curve[-1], val_curve[-1])
 
         if val_mse + finetune_cfg.min_delta < best_val:
             best_val = val_mse

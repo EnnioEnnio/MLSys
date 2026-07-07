@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 import torch
 from torch import nn
+
+# (epoch, train_mse, val_mse) -> None; invoked after each epoch so callers can stream curves.
+EpochCallback = Callable[[int, float, float], None]
 
 
 class FCHead(nn.Module):
@@ -64,6 +67,7 @@ def train_head(
     y_val: torch.Tensor,
     config: HeadTrainConfig | None = None,
     seed: int | None = None,
+    epoch_callback: EpochCallback | None = None,
 ) -> HeadTrainResult:
     """Train an FCHead with AdamW + MSE, early-stop on val-MSE plateau."""
     if config is None:
@@ -110,6 +114,8 @@ def train_head(
             val_pred = head(x_val)
             val_mse = float(loss_fn(val_pred, y_val))
         val_curve.append(val_mse)
+        if epoch_callback is not None:
+            epoch_callback(epoch, train_curve[-1], val_curve[-1])
 
         if val_mse + config.min_delta < best_val:
             best_val = val_mse

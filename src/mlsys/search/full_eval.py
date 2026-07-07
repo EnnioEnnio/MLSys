@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from mlsys.finetune import FinetuneConfig
-from mlsys.head import HeadTrainConfig
+from mlsys.head import EpochCallback, HeadTrainConfig
 from mlsys.io import JsonlWriter, ensure_run_dir, results_path
 from mlsys.models.registry import ModelSpec, load_specs
 from mlsys.search.regret import regret_curve
@@ -67,7 +67,7 @@ def _run_pass(
     specs: list[ModelSpec],
     *,
     out_path: Path,
-    candidate_fn: Callable[[ModelSpec], RunRecord],
+    candidate_fn: Callable[[ModelSpec, EpochCallback | None], RunRecord],
     device: str,
     wandb_run: object | None,
     table_name: str,
@@ -80,7 +80,13 @@ def _run_pass(
     with JsonlWriter(out_path) as writer:
         for i, spec in enumerate(specs, start=1):
             log.info("[%s %d/%d] %s — starting", pass_name, i, total, spec.name)
-            record = candidate_fn(spec)
+            # Stream per-epoch curves live to W&B (no-op when W&B is off).
+            cb = (
+                _make_epoch_logger(spec.name, pass_name, wandb_run)
+                if wandb_run is not None
+                else None
+            )
+            record = candidate_fn(spec, cb)
             total_s = sum(record.timing.get(k, 0.0) for k in _TIMING_KEYS)
             log.info(
                 "[%s %d/%d] %s — done: r2=%.4f mse=%.4f in %.1fs",
@@ -94,8 +100,6 @@ def _run_pass(
             )
             writer.write(record.to_dict())
             records.append(record)
-            if wandb_run is not None:
-                _log_curves_to_wandb(record)
             # Per-candidate GPU tensors are now dereferenced; reclaim them so the
             # next candidate starts clean.
             release_gpu_memory(device)
@@ -126,7 +130,7 @@ def run_frozen(
         wandb_run=wandb_run,
         table_name="results_frozen",
         pass_name="frozen",
-        candidate_fn=lambda spec: score_candidate(
+        candidate_fn=lambda spec, cb: score_candidate(
             dataset,
             spec,
             device=device,
@@ -134,6 +138,7 @@ def run_frozen(
             head_config=head_config,
             head_repeats=head_repeats,
             seeds=seeds,
+            epoch_callback=cb,
         ),
     )
 
@@ -159,7 +164,7 @@ def run_finetune(
         wandb_run=wandb_run,
         table_name="results_finetune",
         pass_name="finetune",
-        candidate_fn=lambda spec: finetune_candidate(
+        candidate_fn=lambda spec, cb: finetune_candidate(
             dataset,
             spec,
             device=device,
@@ -167,6 +172,7 @@ def run_finetune(
             head_config=head_config,
             finetune_config=finetune_config,
             head_repeats=head_repeats,
+            epoch_callback=cb,
         ),
     )
 
@@ -315,20 +321,28 @@ def _result_row(record: RunRecord) -> dict[str, object]:
     }
 
 
-def _log_curves_to_wandb(record: RunRecord) -> None:
-    # Imported lazily so the unused-without-flag path stays free of the dep.
-    import wandb  # type: ignore[import-not-found]
+def _make_epoch_logger(model: str, strategy: str, wandb_run: object) -> EpochCallback:
+    """Build a per-epoch callback that streams train/val MSE live to W&B.
 
-    for epoch, (tr, va) in enumerate(
-        zip(record.head_train_curve, record.head_val_curve, strict=False)
-    ):
+    Keyed by ``<model>/<strategy>/{train,val}_mse`` so passes (frozen vs finetune) land on
+    distinct series on the same run. For frozen's repeated heads all repeats stream under the
+    same keys — the curves are a visual anchor; the averaged results table is authoritative.
+    """
+    del wandb_run  # Presence already gated by the caller; the closure re-imports wandb.
+
+    def _log(epoch: int, train_mse: float, val_mse: float) -> None:
+        # Imported lazily so the unused-without-flag path stays free of the dep.
+        import wandb  # type: ignore[import-not-found]
+
         wandb.log(
             {
-                f"{record.model}/{record.strategy}/train_mse": tr,
-                f"{record.model}/{record.strategy}/val_mse": va,
+                f"{model}/{strategy}/train_mse": train_mse,
+                f"{model}/{strategy}/val_mse": val_mse,
                 "epoch": epoch,
             }
         )
+
+    return _log
 
 
 def _log_results_table(records: list[RunRecord], *, name: str = "results") -> None:

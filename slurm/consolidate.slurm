@@ -29,6 +29,13 @@ REPO_PATH=/sc/projects/<GROUP>/<Project>/<*Path>
 : "${ARRAY_JOB_ID:?set via --export=ALL,ARRAY_JOB_ID=<array job id>}"
 HIDDEN=${HIDDEN:-0}
 
+# The NGC image declares NVIDIA_VISIBLE_DEVICES=all, which makes enroot's GPU
+# hook (98-nvidia.sh) run nvidia-container-cli at container start — a binary
+# that doesn't exist on CPU nodes, so the container dies before our code runs.
+# "void" is enroot's documented switch to skip the GPU hook; --container-env
+# below forces our value to override the image's.
+export NVIDIA_VISIBLE_DEVICES=void
+
 echo "Consolidating runs/$ARRAY_JOB_ID"
 echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURMD_NODENAME"
@@ -42,6 +49,7 @@ srun --container-image="nvcr.io#nvidia/pytorch:25.03-py3" \
      --container-name=$CONTAINER_NAME \
      --container-writable \
      --container-mounts=$REPO_PATH:/workspace \
+     --container-env=NVIDIA_VISIBLE_DEVICES \
      bash -c '
 set -euo pipefail
 
@@ -61,7 +69,7 @@ pip install --no-cache-dir -e /workspace
 #   python -m mlsys consolidate /workspace/runs/$ARRAY_JOB_ID --hidden "$HIDDEN" --wandb --cleanup
 srun --container-name=$CONTAINER_NAME \
      --container-mounts=$REPO_PATH:/workspace \
-     --container-env=WANDB_API_KEY,ARRAY_JOB_ID,HIDDEN \
+     --container-env=WANDB_API_KEY,ARRAY_JOB_ID,HIDDEN,NVIDIA_VISIBLE_DEVICES \
      --container-workdir=/workspace \
      bash -c '
 set -euo pipefail

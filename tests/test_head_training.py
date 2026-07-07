@@ -6,7 +6,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from mlsys.head import HeadTrainConfig, train_head  # noqa: E402
+from mlsys.head import FCHead, HeadTrainConfig, train_head  # noqa: E402
 
 
 def test_head_converges_below_noise_floor() -> None:
@@ -43,6 +43,25 @@ def test_train_head_rejects_empty_split() -> None:
         train_head(empty_x, empty_y, x, y, cfg)
     with pytest.raises(ValueError, match="non-empty"):
         train_head(x, y, empty_x, empty_y, cfg)
+
+
+def test_train_head_trains_prebuilt_head_in_place() -> None:
+    # Passing head= trains that exact object (the LP-FT warmup path) instead of a fresh one.
+    torch.manual_seed(0)
+    x = torch.randn(40, 8)
+    y = x[:, 0] * 2.0
+    x_train, x_val = x[:32], x[32:]
+    y_train, y_val = y[:32], y[32:]
+
+    head = FCHead(in_dim=8, hidden=None)
+    before = [p.detach().clone() for p in head.parameters()]
+
+    result = train_head(x_train, y_train, x_val, y_val, HeadTrainConfig(epochs=5), head=head)
+
+    assert result.head is head
+    assert any(not torch.equal(b, p) for b, p in zip(before, head.parameters(), strict=True)), (
+        "prebuilt head params did not change"
+    )
 
 
 def test_seed_produces_identical_initial_weights() -> None:

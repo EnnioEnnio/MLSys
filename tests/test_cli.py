@@ -106,6 +106,37 @@ def test_strategy_routes_to_run_strategy(strategy, tmp_path, monkeypatch) -> Non
     assert captured["strategy"] == strategy
 
 
+@pytest.mark.parametrize("extra_args,expected", [([], 0), (["--warmup-epochs", "2"], 2)])
+def test_warmup_epochs_reaches_finetune_config(extra_args, expected, tmp_path, monkeypatch) -> None:
+    # --warmup-epochs threads through to run_strategy's finetune_config; default is 0.
+    import sys
+
+    cli_main = sys.modules["mlsys.cli.main"]
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(cli_main, "load_dataset", lambda name: object())
+
+    def fake_run_strategy(name, dataset, **kwargs):
+        captured["warmup_epochs"] = kwargs["finetune_config"].warmup_epochs
+        return []
+
+    monkeypatch.setattr(cli_main, "run_strategy", fake_run_strategy)
+
+    rc = main(
+        [
+            "search",
+            "--dataset",
+            "wine_reviews",
+            "--strategy",
+            "finetune",
+            "--output-dir",
+            str(tmp_path / "run"),
+            *extra_args,
+        ]
+    )
+    assert rc == 0
+    assert captured["warmup_epochs"] == expected
+
+
 def _fake_consolidation_result(tmp_path, rows=(), summary=None):
     from mlsys.search.consolidate import ConsolidationResult
 

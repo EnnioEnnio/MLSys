@@ -56,9 +56,15 @@ consolidated W&B run and append `_frozen` / `_finetune` / `_regret` — same fil
 ## When a task fails
 
 The consolidate job shows `DependencyNeverSatisfied` in `squeue` and never runs (cancel it with
-`scancel` if it lingers — auto-purge is scheduler-config dependent). Retry only the failed
-task ids, pinning the **original** experiment dir (a retry gets a new array job id). Retries
-bypass `submit.sh`, so repeat any non-default knobs on the command line:
+`scancel` if it lingers — auto-purge is scheduler-config dependent). Find the failed task ids:
+
+```bash
+sacct -j <orig_id> --format=JobID%18,State,ExitCode   # FAILED / CANCELLED / OOM tasks
+```
+
+Retry only those ids, pinning the **original** experiment dir via `RUN_ID` (a retry gets a new
+array job id — without `RUN_ID` it writes into a fresh `runs/<new_id>/`). Retries bypass
+`submit.sh`, so repeat any non-default knobs on the command line:
 
 ```bash
 sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,HIDDEN=<same_as_before> slurm/array_search.slurm
@@ -66,8 +72,11 @@ sbatch --dependency=afterok:<retry_job_id> --export=ALL,ARRAY_JOB_ID=<orig_id>,H
   slurm/consolidate.slurm
 ```
 
-Retried tasks overwrite their own fragment (`rm -f` before the run), so no double-appending.
-`mlsys consolidate` is idempotent — safe to re-run manually anytime.
+The `afterok` only gates on the **retry** job — if other original tasks are still running when
+it finishes, consolidate starts early, finds an incomplete pool, and fails loudly (by design);
+just re-submit the consolidate line once everything is done. Retried tasks overwrite their own
+fragment (`rm -f` before the run), so no double-appending. `mlsys consolidate` is idempotent —
+safe to re-run manually anytime.
 
 ## Single-node fallback
 

@@ -14,8 +14,8 @@ set -euo pipefail
 
 # --- Search parameters (forwarded to `python -m mlsys search` in every task) ---
 export DATASET=${DATASET:-wine_reviews}                # dataset name from config/datasets.yaml
-export HIDDEN=${HIDDEN:-0}                             # head hidden width; 0 = linear probe
-export HEAD_REPEATS=${HEAD_REPEATS:-3}                 # frozen-pass head repeats (variance)
+export HIDDEN=${HIDDEN:-256}                             # head hidden width; 0 = linear probe
+export HEAD_REPEATS=${HEAD_REPEATS:-1}                 # frozen-pass head repeats (variance)
 export EPOCHS=${EPOCHS:-30}                            # head epochs
 export BATCH_SIZE=${BATCH_SIZE:-64}                    # encode/head batch size
 export FINETUNE_EPOCHS=${FINETUNE_EPOCHS:-3}           # joint-loop epochs

@@ -25,10 +25,15 @@ export FINETUNE_BATCH_SIZE=${FINETUNE_BATCH_SIZE:-64}  # joint-loop batch size
 # --- SLURM shape ---
 THROTTLE=${THROTTLE:-4}          # max concurrent array tasks (%N)
 
-# Pool size from the same source of truth as the tasks' index->model mapping
-# (load_specs order). Falls back to grep only if the package isn't importable
-# on the login node.
-N=$(python -m mlsys list-models --count 2>/dev/null || grep -c '^- name:' config/models.yaml)
+# Run from anywhere: resolve the repo root for config/ and slurm/ paths.
+cd "$(dirname "$0")/.."
+
+# Pool size, ideally from the same source of truth as the tasks' index->model
+# mapping (load_specs order). HPI login nodes block python outright (the wrapper
+# may even print its refusal to stdout with exit 0), so validate the output is a
+# number and otherwise count models.yaml entries — same file, same order.
+N=$(python -m mlsys list-models --count 2>/dev/null || true)
+[[ "$N" =~ ^[0-9]+$ ]] || N=$(grep -c '^- name:' config/models.yaml)
 [ "$N" -gt 0 ] || { echo "empty model pool" >&2; exit 1; }
 
 echo "Submitting array over $N models (0-$((N - 1)), throttle %$THROTTLE)"

@@ -108,6 +108,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="epochs for the finetune/full_eval joint loop (default: %(default)s)",
     )
     search.add_argument(
+        "--warmup-epochs",
+        type=int,
+        default=FinetuneConfig.warmup_epochs,
+        help="head-only warmup epochs with the backbone frozen before the finetune/full_eval "
+        "joint loop (LP-FT; 0 = off, default: %(default)s)",
+    )
+    search.add_argument(
         "--finetune-lr",
         type=float,
         default=FinetuneConfig.backbone_lr,
@@ -387,6 +394,7 @@ def _run_search(args: argparse.Namespace) -> int:
         epochs=args.finetune_epochs,
         batch_size=args.finetune_batch_size,
         backbone_lr=args.finetune_lr,
+        warmup_epochs=args.warmup_epochs,
     )
 
     wandb_run = None
@@ -411,6 +419,7 @@ def _run_search(args: argparse.Namespace) -> int:
                 "finetune_epochs": finetune_cfg.epochs,
                 "finetune_batch_size": finetune_cfg.batch_size,
                 "finetune_backbone_lr": finetune_cfg.backbone_lr,
+                "finetune_warmup_epochs": finetune_cfg.warmup_epochs,
             },
         )
 

@@ -132,6 +132,32 @@ def test_train_full_model_updates_backbone_params() -> None:
     assert len(result.train_curve) == len(result.val_curve)
 
 
+def test_warmup_trains_head_but_not_backbone() -> None:
+    # warmup_epochs > 0 with no joint epochs: the head moves, the backbone stays frozen.
+    torch.manual_seed(0)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+    backbone = _TrainableFakeBackbone(spec, "cpu")
+    head = FCHead(in_dim=8, hidden=None)
+    backbone_before = backbone.proj.weight.detach().clone()
+    head_before = [p.detach().clone() for p in head.parameters()]
+
+    train_full_model(
+        cast(TrainableBackbone, backbone),
+        head,
+        _rows(_FakeDataset()),
+        HeadTrainConfig(),
+        FinetuneConfig(epochs=0, warmup_epochs=2, batch_size=4),
+        "cpu",
+    )
+
+    assert torch.allclose(backbone_before, backbone.proj.weight), (
+        "backbone changed during head-only warmup"
+    )
+    assert any(
+        not torch.equal(b, p) for b, p in zip(head_before, head.parameters(), strict=True)
+    ), "head params did not change during warmup"
+
+
 @pytest.fixture
 def trainable_loader():
     register_adapter("trainable_fake", lambda spec, device: _TrainableFakeBackbone(spec, device))
@@ -160,6 +186,19 @@ def test_finetune_candidate_produces_record(trainable_loader) -> None:
     assert record.timing["inference_s"] == 0.0
     assert record.timing["train_head_s"] > 0.0
     assert record.extras["head_repeats"] == 1
+
+
+def test_finetune_candidate_with_warmup_keeps_timing_contract(trainable_loader) -> None:
+    # Warmup cost lands in train_head_s (inference still fused into the joint loop -> 0).
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="trainable_fake", embedding_dim=8)
+    record = finetune_candidate(
+        cast(LoadedDataset, _FakeDataset()),
+        spec,
+        device="cpu",
+        finetune_config=FinetuneConfig(epochs=2, batch_size=4, warmup_epochs=2),
+    )
+    assert record.timing["inference_s"] == 0.0
+    assert record.timing["train_head_s"] > 0.0
 
 
 def test_finetune_candidate_falls_back_for_static(static_loader) -> None:

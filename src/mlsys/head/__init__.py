@@ -68,8 +68,14 @@ def train_head(
     config: HeadTrainConfig | None = None,
     seed: int | None = None,
     epoch_callback: EpochCallback | None = None,
+    head: FCHead | None = None,
 ) -> HeadTrainResult:
-    """Train an FCHead with AdamW + MSE, early-stop on val-MSE plateau."""
+    """Train an FCHead with AdamW + MSE, early-stop on val-MSE plateau.
+
+    Pass ``head`` to train an existing FCHead in place (e.g. the LP-FT warmup phase);
+    its ``in_dim``/``hidden`` come from the module, so ``config.hidden`` is ignored.
+    Otherwise a fresh FCHead is built from ``x_train`` width + ``config.hidden``.
+    """
     if config is None:
         config = HeadTrainConfig()
     if x_train.size(0) == 0 or x_val.size(0) == 0:
@@ -83,7 +89,8 @@ def train_head(
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
     device = x_train.device
-    head = FCHead(in_dim=x_train.size(1), hidden=config.hidden).to(device)
+    if head is None:
+        head = FCHead(in_dim=x_train.size(1), hidden=config.hidden).to(device)
     optim = torch.optim.AdamW(head.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     loss_fn = nn.MSELoss()
 

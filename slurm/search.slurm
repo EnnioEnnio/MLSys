@@ -84,9 +84,12 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # they are accepted but ignored by the frozen strategy.
 FINETUNE_ARGS=""
 if [[ "$STRATEGY" == "finetune" || "$STRATEGY" == "full_eval" ]]; then
-  FINETUNE_ARGS="--finetune-epochs 3 --finetune-lr 2e-5 --finetune-batch-size 64"
+  FINETUNE_ARGS="--finetune-epochs 10 --finetune-lr 2e-5 --finetune-batch-size 64 --warmup-epochs 2"
 fi
 
+# Every value-taking flag is passed explicitly at its standard value so nothing is
+# forgotten on a future run. Two flags are left unset on purpose: --models (omitted =
+# whole pool; there is no explicit "all" token) and --cache-embeddings (v2 stub, no-op).
 srun --container-name=$CONTAINER_NAME \
      --container-mounts=$REPO_PATH:/workspace \
      --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF \
@@ -94,7 +97,10 @@ srun --container-name=$CONTAINER_NAME \
      python -m mlsys search \
        --dataset wine_reviews \
        --strategy $STRATEGY \
-       --hidden 0 \
+       --epochs 30 \
+       --batch-size 64 \
+       --hidden 256 \
+       --device cuda \
        --head-repeats $HEAD_REPEATS \
        --output-dir /workspace/runs/$SLURM_JOB_ID \
        $FINETUNE_ARGS \

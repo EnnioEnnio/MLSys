@@ -25,7 +25,8 @@ DATASET=wine_reviews HIDDEN=512 FINETUNE_LR=1e-5 bash slurm/submit.sh
 | `HEAD_REPEATS` | `1` | `--head-repeats` |
 | `EPOCHS` | `30` | `--epochs` |
 | `BATCH_SIZE` | `64` | `--batch-size` |
-| `FINETUNE_EPOCHS` | `3` | `--finetune-epochs` |
+| `FINETUNE_EPOCHS` | `10` | `--finetune-epochs` |
+| `WARMUP_EPOCHS` | `2` | `--warmup-epochs` (head-only LP-FT warmup before the joint loop; 0 = off) |
 | `FINETUNE_LR` | `2e-5` | `--finetune-lr` |
 | `FINETUNE_BATCH_SIZE` | `64` | `--finetune-batch-size` |
 | `THROTTLE` | `4` | max concurrent array tasks (`%N`) |

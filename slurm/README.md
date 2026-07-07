@@ -2,24 +2,54 @@
 
 Cluster launch for `mlsys search`.
 
-## One-shot setup
+**One-shot setup** (all scripts): set `REPO_PATH` to your cluster checkout, `--mail-user` to
+your slack handle, `-A {account_name}` to your SLURM account. For W&B, `export WANDB_API_KEY=...`
+in your shell rc **before** submitting — the cluster does not read `.env`.
 
-1. Edit `slurm/search.slurm`:
-   - `REPO_PATH` → your cluster checkout path (e.g. `/sc/home/<you>/mlsys`).
-   - `--mail-user` → your slack handle.
-   - `-A {account_name}` → your SLURM account.
-2. Put your W&B key in your shell rc as `export WANDB_API_KEY=...` (the script forwards it via `--container-env`). The cluster does **not** read a local `.env` file — the variable must be exported in the shell before `sbatch`. Skip if you don't pass `--wandb`.
-
-## Launch
+## Quickstart
 
 ```bash
-sbatch slurm/search.slurm
+bash slurm/submit.sh            # HIDDEN=512 bash slurm/submit.sh for an MLP head
 ```
 
-Results land in `runs/$SLURM_JOB_ID/results.jsonl` inside the repo checkout. Each line is one (dataset, model) record with metrics + per-substep timing.
+Submits a **job array** (`array_search.slurm`, one model per task, `full_eval` each, `%4`
+concurrent — the array bound comes from `mlsys list-models --count`) plus a dependent
+consolidation job (`consolidate.slurm`, `afterok`). Each task writes a fragment to
+`runs/<ARRAY_JOB_ID>/<ARRAY_JOB_ID>_task_<n>/` and streams its own W&B run live;
+consolidation merges the fragments into `runs/<ARRAY_JOB_ID>/results.jsonl`, recomputes
+`regret.json` as if a single-node `full_eval` had produced it, exports analysis-ready CSVs,
+and pushes one consolidated W&B run named like a single-node run.
 
-## Notes
+## From run to analysis
 
-- The container (`nvcr.io#nvidia/pytorch:25.01-py3`) is named `mlsys-$USER-pytorch2501` and reused across jobs — the `pip install` step skips if `sentence-transformers` is already present.
-- To run a subset, edit the `python -m mlsys search` line and append `--models name1,name2`.
-- Default `--time=2:00:00` is plenty for the four-model seed pool on one A100. Bump when the pool grows.
+Consolidation already wrote the three CSVs in the exact filename grammar `mlsys analyze`
+expects — no renaming:
+
+```bash
+scp 'cluster:<REPO_PATH>/runs/<id>/*.csv' results/<experiment>/
+mlsys analyze results/<experiment>
+```
+
+Alternative road: download the `results_frozen` / `results_finetune` / regret tables from the
+consolidated W&B run and append `_frozen` / `_finetune` / `_regret` — same files.
+
+## When a task fails
+
+The consolidate job shows `DependencyNeverSatisfied` in `squeue` and never runs (cancel it with
+`scancel` if it lingers — auto-purge is scheduler-config dependent). Retry only the failed
+task ids, pinning the **original** experiment dir (a retry gets a new array job id):
+
+```bash
+sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,HIDDEN=<same_as_before> slurm/array_search.slurm
+sbatch --dependency=afterok:<retry_job_id> --export=ALL,ARRAY_JOB_ID=<orig_id>,HIDDEN=<same> \
+  slurm/consolidate.slurm
+```
+
+Retried tasks overwrite their own fragment (`rm -f` before the run), so no double-appending.
+`mlsys consolidate` is idempotent — safe to re-run manually anytime.
+
+## Single-node fallback
+
+`sbatch slurm/search.slurm` runs the whole pool in one job (edit `STRATEGY` inside; results in
+`runs/$SLURM_JOB_ID/`). Simpler, but the job holds a GPU for the slowest model's wall-clock and
+one OOM kills the entire run — prefer the array.

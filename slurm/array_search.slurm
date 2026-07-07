@@ -41,8 +41,8 @@ OUT=/workspace/runs/${RUN_ID}/${RUN_ID}_task_${SLURM_ARRAY_TASK_ID}
 # it exports them to every task via --export=ALL); the defaults here mirror
 # submit.sh's and only cover direct sbatch retries.
 DATASET=${DATASET:-wine_reviews}
-HIDDEN=${HIDDEN:-0}
-HEAD_REPEATS=${HEAD_REPEATS:-3}
+HIDDEN=${HIDDEN:-256}
+HEAD_REPEATS=${HEAD_REPEATS:-1}
 EPOCHS=${EPOCHS:-30}
 BATCH_SIZE=${BATCH_SIZE:-64}
 FINETUNE_EPOCHS=${FINETUNE_EPOCHS:-3}

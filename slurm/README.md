@@ -20,7 +20,7 @@ DATASET=wine_reviews HIDDEN=512 FINETUNE_LR=1e-5 bash slurm/submit.sh
 |---|---|---|
 | `DATASET` | `wine_reviews` | `--dataset` |
 | `HIDDEN` | `0` (linear probe) | `--hidden` |
-| `HEAD_REPEATS` | `3` | `--head-repeats` |
+| `HEAD_REPEATS` | `1` | `--head-repeats` |
 | `EPOCHS` | `30` | `--epochs` |
 | `BATCH_SIZE` | `64` | `--batch-size` |
 | `FINETUNE_EPOCHS` | `3` | `--finetune-epochs` |

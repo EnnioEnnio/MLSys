@@ -10,6 +10,10 @@
 # jobs via --export=ALL, so the array tasks and the consolidate step can't
 # drift apart. Retries bypass this script (see slurm/README.md) — repeat any
 # non-default knobs there.
+#
+# NOTE: HPI login nodes (lx*) kill this script at exec time ("This command is
+# not allowed on the login node!") — run it from a run node instead:
+# https://docs.sc.hpi.de/cluster/Resources/Run-Nodes/
 set -euo pipefail
 
 # --- Search parameters (forwarded to `python -m mlsys search` in every task) ---

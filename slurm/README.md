@@ -9,7 +9,9 @@ in your shell rc **before** submitting — the cluster does not read `.env`.
 ## Quickstart
 
 `submit.sh` is the single entry point — every experiment parameter is an env var set there
-(or inline), forwarded to all SLURM jobs via `--export=ALL`:
+(or inline), forwarded to all SLURM jobs via `--export=ALL`. Run it **from a
+[run node](https://docs.sc.hpi.de/cluster/Resources/Run-Nodes/)** — HPI login nodes (`lx*`)
+kill the script at exec time (`sbatch` itself is allowed there, but scripts aren't):
 
 ```bash
 bash slurm/submit.sh

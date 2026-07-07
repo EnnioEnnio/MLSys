@@ -21,8 +21,8 @@
 # order the tasks use to map index -> model). %4 throttles concurrent tasks.
 #
 # Retrying failed tasks: the retry job gets a NEW array job id, so pin the original
-# experiment dir explicitly:
-#   sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id> slurm/array_search.slurm
+# experiment dir explicitly (and repeat any non-default search knobs):
+#   sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,HIDDEN=<same> slurm/array_search.slurm
 # IMPORTANT: Update REPO_PATH below to match your cluster home directory path.
 # NOTE: Excludes V100 GPUs (CUDA 7.0) since PyTorch 25.03 requires CUDA capability >= 7.5.
 
@@ -35,9 +35,19 @@ REPO_PATH=/sc/projects/<GROUP>/<Project>/<*Path>
 # RUN_ID names the experiment dir; defaults to this array's job id. Override it
 # (see retry recipe above) so retried tasks write into the original experiment.
 RUN_ID=${RUN_ID:-$SLURM_ARRAY_JOB_ID}
+OUT=/workspace/runs/${RUN_ID}/${RUN_ID}_task_${SLURM_ARRAY_TASK_ID}
+
+# Search parameters. Set these in slurm/submit.sh (the intended entry point —
+# it exports them to every task via --export=ALL); the defaults here mirror
+# submit.sh's and only cover direct sbatch retries.
+DATASET=${DATASET:-wine_reviews}
 HIDDEN=${HIDDEN:-0}
 HEAD_REPEATS=${HEAD_REPEATS:-3}
-OUT=/workspace/runs/${RUN_ID}/${RUN_ID}_task_${SLURM_ARRAY_TASK_ID}
+EPOCHS=${EPOCHS:-30}
+BATCH_SIZE=${BATCH_SIZE:-64}
+FINETUNE_EPOCHS=${FINETUNE_EPOCHS:-3}
+FINETUNE_LR=${FINETUNE_LR:-2e-5}
+FINETUNE_BATCH_SIZE=${FINETUNE_BATCH_SIZE:-64}
 
 echo "Starting mlsys array task"
 echo "Array job: $SLURM_ARRAY_JOB_ID  task: $SLURM_ARRAY_TASK_ID  run id: $RUN_ID"
@@ -85,12 +95,11 @@ echo "Running model search for task $SLURM_ARRAY_TASK_ID..."
 # locking fixed-size blocks (see search.slurm for the full rationale).
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-FINETUNE_ARGS="--finetune-epochs 3 --finetune-lr 2e-5 --finetune-batch-size 64"
-
-export OUT HIDDEN HEAD_REPEATS FINETUNE_ARGS
+export OUT DATASET HIDDEN HEAD_REPEATS EPOCHS BATCH_SIZE \
+       FINETUNE_EPOCHS FINETUNE_LR FINETUNE_BATCH_SIZE
 srun --container-name=$CONTAINER_NAME \
      --container-mounts=$REPO_PATH:/workspace \
-     --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF,SLURM_ARRAY_TASK_ID,OUT,HIDDEN,HEAD_REPEATS,FINETUNE_ARGS \
+     --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF,SLURM_ARRAY_TASK_ID,OUT,DATASET,HIDDEN,HEAD_REPEATS,EPOCHS,BATCH_SIZE,FINETUNE_EPOCHS,FINETUNE_LR,FINETUNE_BATCH_SIZE \
      --container-workdir=/workspace \
      bash -c '
 set -euo pipefail
@@ -101,13 +110,17 @@ echo "Task $SLURM_ARRAY_TASK_ID -> $MODEL"
 # results.jsonl is append-only; a retried task must not double-append its fragment.
 rm -f "$OUT/results.jsonl" "$OUT/regret.json"
 python -m mlsys search \
-  --dataset wine_reviews \
+  --dataset "$DATASET" \
   --strategy full_eval \
   --models "$MODEL" \
   --hidden "$HIDDEN" \
   --head-repeats "$HEAD_REPEATS" \
+  --epochs "$EPOCHS" \
+  --batch-size "$BATCH_SIZE" \
+  --finetune-epochs "$FINETUNE_EPOCHS" \
+  --finetune-lr "$FINETUNE_LR" \
+  --finetune-batch-size "$FINETUNE_BATCH_SIZE" \
   --output-dir "$OUT" \
-  $FINETUNE_ARGS \
   --wandb
 '
 

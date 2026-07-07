@@ -8,13 +8,31 @@ in your shell rc **before** submitting — the cluster does not read `.env`.
 
 ## Quickstart
 
+`submit.sh` is the single entry point — every experiment parameter is an env var set there
+(or inline), forwarded to all SLURM jobs via `--export=ALL`:
+
 ```bash
-bash slurm/submit.sh            # HIDDEN=512 bash slurm/submit.sh for an MLP head
+bash slurm/submit.sh
+DATASET=wine_reviews HIDDEN=512 FINETUNE_LR=1e-5 bash slurm/submit.sh
 ```
 
-Submits a **job array** (`array_search.slurm`, one model per task, `full_eval` each, `%4`
-concurrent — the array bound comes from `mlsys list-models --count`) plus a dependent
-consolidation job (`consolidate.slurm`, `afterok`). Each task writes a fragment to
+| Knob | Default | Maps to |
+|---|---|---|
+| `DATASET` | `wine_reviews` | `--dataset` |
+| `HIDDEN` | `0` (linear probe) | `--hidden` |
+| `HEAD_REPEATS` | `3` | `--head-repeats` |
+| `EPOCHS` | `30` | `--epochs` |
+| `BATCH_SIZE` | `64` | `--batch-size` |
+| `FINETUNE_EPOCHS` | `3` | `--finetune-epochs` |
+| `FINETUNE_LR` | `2e-5` | `--finetune-lr` |
+| `FINETUNE_BATCH_SIZE` | `64` | `--finetune-batch-size` |
+| `THROTTLE` | `4` | max concurrent array tasks (`%N`) |
+
+The consolidate job is pure CPU work and runs on `cpu-batch`; only the array tasks occupy GPUs.
+
+Submits a **job array** (`array_search.slurm`, one model per task, `full_eval` each — the
+array bound comes from `mlsys list-models --count`) plus a dependent consolidation job
+(`consolidate.slurm`, `afterok`). Each task writes a fragment to
 `runs/<ARRAY_JOB_ID>/<ARRAY_JOB_ID>_task_<n>/` and streams its own W&B run live;
 consolidation merges the fragments into `runs/<ARRAY_JOB_ID>/results.jsonl`, recomputes
 `regret.json` as if a single-node `full_eval` had produced it, exports analysis-ready CSVs,
@@ -37,7 +55,8 @@ consolidated W&B run and append `_frozen` / `_finetune` / `_regret` — same fil
 
 The consolidate job shows `DependencyNeverSatisfied` in `squeue` and never runs (cancel it with
 `scancel` if it lingers — auto-purge is scheduler-config dependent). Retry only the failed
-task ids, pinning the **original** experiment dir (a retry gets a new array job id):
+task ids, pinning the **original** experiment dir (a retry gets a new array job id). Retries
+bypass `submit.sh`, so repeat any non-default knobs on the command line:
 
 ```bash
 sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,HIDDEN=<same_as_before> slurm/array_search.slurm

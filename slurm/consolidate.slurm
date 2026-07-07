@@ -2,9 +2,12 @@
 #SBATCH -A {account_name}
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=slack:<YOUR_USERNAME>
-#SBATCH --partition=gpu-batch
+#SBATCH --partition=cpu-batch
 #SBATCH -C ARCH:X86
-#SBATCH --time=00:20:00
+# Generous: the named container is node-local, so this job usually lands on a
+# node that must cold-pull the NGC image (~15 GB) + pip install before the
+# (seconds-long) merge. Subsequent runs on the same node reuse the container.
+#SBATCH --time=00:45:00
 #SBATCH --mem=8G
 #SBATCH --job-name=mlsys-consolidate
 #SBATCH --output=slurm-mlsys-consolidate-%j.out
@@ -12,8 +15,8 @@
 # Dependent step after array_search.slurm: merge the per-task results.jsonl
 # fragments in runs/$ARRAY_JOB_ID/, recompute regret.json over the merged pool,
 # export analysis-ready CSVs, and push the consolidated W&B run. Submitted by
-# slurm/submit.sh with --dependency=afterok:<array_id>. No GPU needed — any CPU
-# partition works.
+# slurm/submit.sh with --dependency=afterok:<array_id>. Consolidation is pure
+# CPU work (stdlib json/csv merge), so it runs on the cpu-batch partition.
 # IMPORTANT: Update REPO_PATH below to match your cluster home directory path.
 
 set -euo pipefail

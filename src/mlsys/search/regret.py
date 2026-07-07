@@ -9,7 +9,11 @@ so the formula is just ``max_M t - max_{S} t`` (REGRET.md note 2).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
+
+from mlsys.io import ensure_run_dir
 
 
 def regret(scores: dict[str, float], shortlist: list[str]) -> float:
@@ -71,3 +75,56 @@ def regret_curve(
         normalized = abs_regret / norm_denom if norm_denom is not None else 0.0
         points.append(RegretPoint(budget=budget, regret=abs_regret, normalized_regret=normalized))
     return points
+
+
+@dataclass(frozen=True)
+class RegretSummary:
+    """A dataset-level regret result: proxy ranking, both r2 maps, and the budget curve."""
+
+    dataset: str
+    proxy_ranking: list[str]
+    frozen_r2: dict[str, float]
+    finetune_r2: dict[str, float]
+    curve: list[RegretPoint]
+
+    def to_payload(self) -> dict:
+        return {
+            "dataset": self.dataset,
+            "metric": "r2",
+            "higher_is_better": True,
+            # head_repeats=1 for finetune, so the SHiFT expectations collapse to point
+            # estimates rather than being averaged over runs (see REGRET.md note 2).
+            "regret_estimator": "point_estimate",
+            "proxy_ranking": self.proxy_ranking,
+            "frozen_r2": self.frozen_r2,
+            "finetune_r2": self.finetune_r2,
+            "curve": [p.to_dict() for p in self.curve],
+        }
+
+
+def summarize_regret(
+    dataset: str,
+    frozen_r2: dict[str, float],
+    finetune_r2: dict[str, float],
+) -> RegretSummary:
+    """Rank by frozen r2 (desc) and compute the regret-vs-budget curve.
+
+    ``sorted`` is stable, so ties in ``frozen_r2`` break by its insertion order — the caller
+    owns that ordering (registry order reproduces a single-node run's tie-break exactly).
+    """
+    proxy_ranking = sorted(frozen_r2, key=lambda m: frozen_r2[m], reverse=True)
+    curve = regret_curve(proxy_ranking, finetune_r2)
+    return RegretSummary(
+        dataset=dataset,
+        proxy_ranking=proxy_ranking,
+        frozen_r2=frozen_r2,
+        finetune_r2=finetune_r2,
+        curve=curve,
+    )
+
+
+def write_regret_json(output_dir: str | Path, summary: RegretSummary) -> Path:
+    """Write the dataset-level regret summary to ``runs/<id>/regret.json``."""
+    path = ensure_run_dir(output_dir) / "regret.json"
+    path.write_text(json.dumps(summary.to_payload(), indent=2, sort_keys=True))
+    return path

@@ -15,7 +15,6 @@ distinguishes frozen vs finetune rows in a full_eval run).
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -23,9 +22,9 @@ from typing import TYPE_CHECKING
 
 from mlsys.finetune import FinetuneConfig
 from mlsys.head import EpochCallback, HeadTrainConfig
-from mlsys.io import JsonlWriter, ensure_run_dir, results_path
+from mlsys.io import JsonlWriter, results_path
 from mlsys.models.registry import ModelSpec, load_specs
-from mlsys.search.regret import regret_curve
+from mlsys.search.regret import summarize_regret, write_regret_json
 from mlsys.search.runner import (
     RunRecord,
     finetune_candidate,
@@ -221,13 +220,12 @@ def run_full_eval(
     log.info("full_eval on %s: phase 3/3 — computing regret curve", dataset.spec.name)
     frozen_r2 = {r.model: r.metrics.r2 for r in frozen}
     finetune_r2 = {r.model: r.metrics.r2 for r in finetune}
-    proxy_ranking = sorted(frozen_r2, key=lambda m: frozen_r2[m], reverse=True)
-    curve = regret_curve(proxy_ranking, finetune_r2)
-    log.info("proxy ranking (frozen r2 desc): %s", ", ".join(proxy_ranking))
+    summary = summarize_regret(dataset.spec.name, frozen_r2, finetune_r2)
+    log.info("proxy ranking (frozen r2 desc): %s", ", ".join(summary.proxy_ranking))
 
-    _write_regret_json(output_dir, dataset, proxy_ranking, frozen_r2, finetune_r2, curve)
+    write_regret_json(output_dir, summary)
     if wandb_run is not None:
-        _log_regret_to_wandb(curve)
+        _log_regret_to_wandb(summary.curve)
     return frozen + finetune
 
 
@@ -281,32 +279,6 @@ def run_strategy(
             wandb_run=wandb_run,
         )
     raise ValueError(f"unknown strategy {strategy!r}; choose from {STRATEGIES}")
-
-
-def _write_regret_json(
-    output_dir: str | Path,
-    dataset: LoadedDataset,
-    proxy_ranking: list[str],
-    frozen_r2: dict[str, float],
-    finetune_r2: dict[str, float],
-    curve: list,
-) -> Path:
-    """Write the dataset-level regret summary to ``runs/<id>/regret.json``."""
-    path = ensure_run_dir(output_dir) / "regret.json"
-    payload = {
-        "dataset": dataset.spec.name,
-        "metric": "r2",
-        "higher_is_better": True,
-        # head_repeats=1 for finetune, so the SHiFT expectations collapse to point
-        # estimates rather than being averaged over runs (see REGRET.md note 2).
-        "regret_estimator": "point_estimate",
-        "proxy_ranking": proxy_ranking,
-        "frozen_r2": frozen_r2,
-        "finetune_r2": finetune_r2,
-        "curve": [p.to_dict() for p in curve],
-    }
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True))
-    return path
 
 
 def _result_row(record: RunRecord) -> dict[str, object]:

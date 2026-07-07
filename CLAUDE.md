@@ -34,7 +34,8 @@ make check       # lint + typecheck + test — run before considering work done 
 
 python -m mlsys search --dataset wine_reviews                      # all models
 python -m mlsys search --dataset wine_reviews --models all-MiniLM-L6-v2,potion-base-8M
-python -m mlsys list-models / list-datasets
+python -m mlsys consolidate runs/<id> [--hidden W] [--cleanup] [--wandb]  # merge job-array fragments
+python -m mlsys list-models / list-datasets                        # --count/--index N size the SLURM array
 uv run pytest -m integration                                       # real-model tests (skipped by default)
 ```
 
@@ -89,6 +90,13 @@ writes `runs/<id>/regret.json` (metric=`r2`, per-budget abs+normalized regret cu
 proxy ranking, both r2 maps; `regret_estimator="point_estimate"` since finetune runs
 once per model — `head_repeats=1`, see REGRET.md note 2).
 
+**Job-array runs** (`slurm/submit.sh`): one model per SLURM array task, fragments in
+`runs/<id>/<id>_task_<n>/`; `search/consolidate.py:consolidate_run` merges them (rows
+verbatim, keep-last dedupe, blocks in `load_specs()` order so the proxy-ranking
+tie-break matches single-node), recomputes `regret.json` via `search/regret.py`
+helpers, and exports `<runname>_{frozen,finetune,regret}.csv` ready for `mlsys analyze`.
+Stdlib-only (no pandas — cluster core install).
+
 ## Model pool
 
 Candidates live in `config/models.yaml`. Under the `frozen` strategy backbones stay
@@ -119,4 +127,10 @@ in via `can_finetune=True` on its adapter — model2vec is `False`). To add a mo
 - Ruff (line length 100, `E,F,I,B,UP,SIM,RUF`); `ty` typecheck; CPU-only tests, no
   coverage gate. `load_specs` validates strictly — keep it loud.
 - `--wandb` is opt-in (`WANDB_API_KEY`). Local: `.env` auto-loaded. Cluster:
-  `export` it before `sbatch`; `slurm/search.slurm` forwards via `--container-env`.
+  `export` it before submitting; the `slurm/*.slurm` scripts forward via
+  `--container-env`. Cluster entry point is `bash slurm/submit.sh` (job array +
+  dependent consolidate); `slurm/search.slurm` is the single-node fallback.
+- **New CLI flag ⇒ wire it through `slurm/`**: add the env-var knob to
+  `submit.sh`, default + forward it in `array_search.slurm` (`--container-env`
+  list included), and document it in `slurm/README.md`. When reviewing a PR
+  that adds a flag, check this wiring — otherwise the scripts diverge.

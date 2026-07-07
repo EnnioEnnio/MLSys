@@ -41,7 +41,8 @@ tests/                # CPU-only smoke + unit tests
 ## CLI
 
 - `python -m mlsys search` — run a search. Flags: `--dataset NAME`, `--models name1,name2` (optional, default all), `--strategy {frozen,finetune,full_eval}` (default `frozen`), `--output-dir PATH` (default `runs/<unix-ts>`), `--epochs INT`, `--batch-size INT`, `--hidden WIDTH`, `--device cpu|cuda`, `--head-repeats N`, `--finetune-epochs INT`, `--finetune-lr FLOAT`, `--finetune-batch-size INT`, `--wandb`, `--cache-embeddings` (stubbed for v2).
-- `python -m mlsys list-models` — dumps `config/models.yaml` entries.
+- `python -m mlsys consolidate RUN_DIR` — merge a SLURM job array's `*_task_*/results.jsonl` fragments into one `full_eval`-shaped run (recomputes `regret.json`, exports analysis-ready CSVs). Flags: `--hidden WIDTH` (head token for the exported run name), `--cleanup`, `--allow-partial`, `--wandb`.
+- `python -m mlsys list-models` — dumps `config/models.yaml` entries. `--count` prints the pool size (the SLURM `--array` bound source of truth); `--index N` prints the bare model name at registry position `N`.
 - `python -m mlsys list-datasets` — dumps `config/datasets.yaml` entries.
 
 ### Strategies (`--strategy`)
@@ -95,13 +96,14 @@ python -m mlsys search --dataset wine_reviews                # linear head (defa
 
 ## Running on the cluster
 
-Edit `slurm/search.slurm` — set `REPO_PATH` to your cluster checkout, set `--mail-user`, and (if you want W&B logging) `export WANDB_API_KEY` in your shell **before** `sbatch` so `--container-env=WANDB_API_KEY` can forward it. The cluster does not read `.env` (that's local-only), so the variable must be exported. Then:
+Edit the `slurm/*.slurm` scripts — set `REPO_PATH` to your cluster checkout, set `--mail-user`, and (if you want W&B logging) `export WANDB_API_KEY` in your shell **before** submitting so `--container-env=WANDB_API_KEY` can forward it. The cluster does not read `.env` (that's local-only), so the variable must be exported. Then:
 
 ```bash
-sbatch slurm/search.slurm
+bash slurm/submit.sh        # job array (one model per task) + dependent consolidation
+sbatch slurm/search.slurm   # single-node fallback: whole pool in one job
 ```
 
-Results land in `runs/$SLURM_JOB_ID/results.jsonl` — one line per `(dataset, model, strategy)` with metrics + per-substep timing (plus `runs/$SLURM_JOB_ID/regret.json` under `--strategy full_eval`). See [slurm/README.md](slurm/README.md) for details.
+The array writes per-task fragments to `runs/<ARRAY_JOB_ID>/<ARRAY_JOB_ID>_task_<n>/`; the dependent consolidate job merges them into `runs/<ARRAY_JOB_ID>/results.jsonl` — one line per `(dataset, model, strategy)` with metrics + per-substep timing — plus `regret.json` and analysis-ready CSVs, exactly as a single-node `full_eval` run. See [slurm/README.md](slurm/README.md) for the run→analysis workflow and the failed-task retry recipe.
 
 ## Analysing results
 

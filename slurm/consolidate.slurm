@@ -27,7 +27,7 @@ REPO_PATH=/sc/projects/<GROUP>/<Project>/<*Path>
 # array run (submit.sh exports the same value to both jobs so the W&B head token
 # can't drift).
 : "${ARRAY_JOB_ID:?set via --export=ALL,ARRAY_JOB_ID=<array job id>}"
-HIDDEN=${HIDDEN:-0}
+HIDDEN=${HIDDEN:-256}
 
 # The NGC image declares NVIDIA_VISIBLE_DEVICES=all, which makes enroot's GPU
 # hook (98-nvidia.sh) run nvidia-container-cli at container start — a binary

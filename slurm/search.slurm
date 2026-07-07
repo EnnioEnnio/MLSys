@@ -71,7 +71,7 @@ STRATEGY=full_eval
 # Number of head training repetitions (predictions averaged to reduce ranking variance
 # on the frozen proxy pass). For full_eval the finetune pass is forced to head_repeats=1
 # internally (REGRET note 2), so this setting only affects the frozen proxy pass.
-HEAD_REPEATS=3
+HEAD_REPEATS=1
 
 echo "Running model search (strategy=$STRATEGY)..."
 # expandable_segments lets the CUDA allocator grow/shrink segments instead of

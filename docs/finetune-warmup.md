@@ -44,7 +44,8 @@ Non-trainable backbones (`can_finetune=False`, e.g. model2vec) fall back to the 
 
 ## Results
 
-TBD — pending the with/without-warmup comparison runs on the HPC cluster (does warmup
-eliminate the negative-r² divergences from `exp_wine_16`, and at what quality cost on the
-models that already converged). That comparison is a separate experiment, not part of this
-change.
+See [warmup-results.md](warmup-results.md) for the with/without-warmup comparison
+(wine_reviews, MLP-256 head, 10-epoch finetune). Short version: 2-epoch warmup cut finetune
+divergences from **3→1** and lifted mean finetune r² from **0.55→0.74**, with no loss at the
+top of the pool. It's a floor-raiser, not a ceiling-raiser; the residual `deberta-v3-base`
+divergence is the LR / clipping / target-standardization half of the fix (#32).

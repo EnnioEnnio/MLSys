@@ -114,6 +114,16 @@
   embedding_dim: 1024
   max_length: 512
 
+# --- Seq2seq generators (summarization task path; loader: seq2seq_lm) ---
+# embedding_dim here is a NOMINAL d_model only: no FCHead is built for summarization,
+# so the runner ignores it. It is kept > 0 solely to satisfy models.yaml validation.
+# max_target_length is an unknown key → captured into ModelSpec.extra (the generation
+# decode length). T5 needs the "summarize: " prefix.
+- {name: t5-small,      hf_repo: google-t5/t5-small,           loader: seq2seq_lm, embedding_dim: 512,  max_length: 512, input_prefix: "summarize: ", max_target_length: 64}
+- {name: flan-t5-small, hf_repo: google/flan-t5-small,         loader: seq2seq_lm, embedding_dim: 512,  max_length: 512, input_prefix: "summarize: ", max_target_length: 64}
+- {name: bart-base,     hf_repo: facebook/bart-base,           loader: seq2seq_lm, embedding_dim: 768,  max_length: 512, max_target_length: 64}
+- {name: distilbart,    hf_repo: sshleifer/distilbart-cnn-12-6, loader: seq2seq_lm, embedding_dim: 1024, max_length: 512, max_target_length: 64}
+
 # DISABLED: both custom-arch ("new-impl"/"nomic_bert") checkpoints load fine but
 # their forward pass throws a CUDA device-side assert (index out of bounds), which
 # poisons the CUDA context and kills the whole sweep. Commented out to unblock a

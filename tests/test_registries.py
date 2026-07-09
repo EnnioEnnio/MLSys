@@ -20,7 +20,7 @@ def test_datasets_yaml_parses() -> None:
     specs = load_dataset_specs()
     assert specs, "datasets.yaml must contain at least one entry"
     for spec in specs.values():
-        assert spec.target_type == "regression"
+        assert spec.target_type in {"regression", "summarization"}
         assert {"train", "val", "test"} <= set(spec.splits)
         assert "{" in spec.text_template
 
@@ -103,15 +103,27 @@ def test_datasets_yaml_rejects_missing_field(tmp_path) -> None:
         load_dataset_specs(bad)
 
 
-def test_datasets_yaml_rejects_non_regression_target(tmp_path) -> None:
+def test_datasets_yaml_rejects_unknown_target(tmp_path) -> None:
     bad = tmp_path / "datasets.yaml"
     bad.write_text(
         "- name: d\n  hf_repo: y/z\n"
         "  splits:\n    train: train\n    val: validation\n    test: test\n"
         '  target_column: y\n  target_type: classification\n  text_template: "{x}"\n'
     )
-    with pytest.raises(ValueError, match="regression"):
+    with pytest.raises(ValueError, match="unsupported target_type"):
         load_dataset_specs(bad)
+
+
+def test_datasets_yaml_accepts_summarization_target(tmp_path) -> None:
+    good = tmp_path / "datasets.yaml"
+    good.write_text(
+        "- name: d\n  hf_repo: y/z\n"
+        "  splits:\n    train: train\n    val: validation\n    test: test\n"
+        '  target_column: summary\n  target_type: summarization\n  text_template: "{dialogue}"\n'
+    )
+    specs = load_dataset_specs(good)
+    assert specs["d"].target_type == "summarization"
+    assert specs["d"].target_column == "summary"
 
 
 def test_datasets_yaml_rejects_missing_split(tmp_path) -> None:

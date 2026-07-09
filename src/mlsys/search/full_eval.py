@@ -33,6 +33,11 @@ from mlsys.search.runner import (
     release_gpu_memory,
     score_candidate,
 )
+from mlsys.search.summarize import (
+    SummarizeConfig,
+    finetune_summarization_candidate,
+    score_summarization_candidate,
+)
 
 if TYPE_CHECKING:
     from mlsys.datasets import LoadedDataset
@@ -40,6 +45,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 STRATEGIES = ("frozen", "finetune", "full_eval")
+
+# The single ranking/scoring metric per task type (both higher-is-better). Used to build
+# the regret curve and label regret.json; the regret math itself is metric-agnostic.
+PRIMARY_METRIC = {"regression": "r2", "summarization": "rougeL"}
 
 # Wall-clock substep fields summed for the per-candidate "done in Ns" log line.
 _TIMING_KEYS = (
@@ -82,14 +91,14 @@ def _run_pass(
             log.info("[%s %d/%d] %s — starting", pass_name, i, total, spec.name)
             record = candidate_fn(spec)
             total_s = sum(record.timing.get(k, 0.0) for k in _TIMING_KEYS)
+            metrics_str = " ".join(f"{k}={v:.4f}" for k, v in record.metrics.to_dict().items())
             log.info(
-                "[%s %d/%d] %s — done: r2=%.4f mse=%.4f in %.1fs",
+                "[%s %d/%d] %s — done: %s in %.1fs",
                 pass_name,
                 i,
                 total,
                 spec.name,
-                record.metrics.r2,
-                record.metrics.mse,
+                metrics_str,
                 total_s,
             )
             writer.write(record.to_dict())
@@ -116,9 +125,32 @@ def run_frozen(
     head_repeats: int = 3,
     wandb_run: object | None = None,
 ) -> list[RunRecord]:
-    """Frozen-backbone pass: train an FC head on every candidate; append to results.jsonl."""
+    """Frozen-proxy pass over every candidate; append to results.jsonl.
+
+    Regression trains a fresh FC head on the frozen encoder; summarization trains only the
+    LM/generation head (whole seq2seq body frozen). Dispatched on ``dataset.spec.target_type``.
+    """
     specs = _resolve_models(model_names)
-    seeds = make_seeds(head_repeats)
+
+    if dataset.spec.target_type == "summarization":
+        cfg = SummarizeConfig()
+
+        def candidate_fn(spec: ModelSpec) -> RunRecord:
+            return score_summarization_candidate(dataset, spec, device=device, config=cfg)
+    else:
+        seeds = make_seeds(head_repeats)
+
+        def candidate_fn(spec: ModelSpec) -> RunRecord:
+            return score_candidate(
+                dataset,
+                spec,
+                device=device,
+                batch_size=batch_size,
+                head_config=head_config,
+                head_repeats=head_repeats,
+                seeds=seeds,
+            )
+
     return _run_pass(
         specs,
         out_path=results_path(output_dir),
@@ -126,15 +158,7 @@ def run_frozen(
         wandb_run=wandb_run,
         table_name="results_frozen",
         pass_name="frozen",
-        candidate_fn=lambda spec: score_candidate(
-            dataset,
-            spec,
-            device=device,
-            batch_size=batch_size,
-            head_config=head_config,
-            head_repeats=head_repeats,
-            seeds=seeds,
-        ),
+        candidate_fn=candidate_fn,
     )
 
 
@@ -150,8 +174,31 @@ def run_finetune(
     head_repeats: int = 1,
     wandb_run: object | None = None,
 ) -> list[RunRecord]:
-    """Finetune pass: unfreeze + jointly train every candidate; append to results.jsonl."""
+    """Finetune pass: unfreeze + jointly train every candidate; append to results.jsonl.
+
+    Regression unfreezes the encoder + head; summarization unfreezes the whole seq2seq model.
+    Dispatched on ``dataset.spec.target_type``.
+    """
     specs = _resolve_models(model_names)
+
+    if dataset.spec.target_type == "summarization":
+        cfg = SummarizeConfig()
+
+        def candidate_fn(spec: ModelSpec) -> RunRecord:
+            return finetune_summarization_candidate(dataset, spec, device=device, config=cfg)
+    else:
+
+        def candidate_fn(spec: ModelSpec) -> RunRecord:
+            return finetune_candidate(
+                dataset,
+                spec,
+                device=device,
+                batch_size=batch_size,
+                head_config=head_config,
+                finetune_config=finetune_config,
+                head_repeats=head_repeats,
+            )
+
     return _run_pass(
         specs,
         out_path=results_path(output_dir),
@@ -159,15 +206,7 @@ def run_finetune(
         wandb_run=wandb_run,
         table_name="results_finetune",
         pass_name="finetune",
-        candidate_fn=lambda spec: finetune_candidate(
-            dataset,
-            spec,
-            device=device,
-            batch_size=batch_size,
-            head_config=head_config,
-            finetune_config=finetune_config,
-            head_repeats=head_repeats,
-        ),
+        candidate_fn=candidate_fn,
     )
 
 
@@ -213,13 +252,16 @@ def run_full_eval(
     )
 
     log.info("full_eval on %s: phase 3/3 — computing regret curve", dataset.spec.name)
-    frozen_r2 = {r.model: r.metrics.r2 for r in frozen}
-    finetune_r2 = {r.model: r.metrics.r2 for r in finetune}
-    proxy_ranking = sorted(frozen_r2, key=lambda m: frozen_r2[m], reverse=True)
-    curve = regret_curve(proxy_ranking, finetune_r2)
-    log.info("proxy ranking (frozen r2 desc): %s", ", ".join(proxy_ranking))
+    key = PRIMARY_METRIC[dataset.spec.target_type]
+    frozen_scores = {r.model: r.metrics.to_dict()[key] for r in frozen}
+    finetune_scores = {r.model: r.metrics.to_dict()[key] for r in finetune}
+    proxy_ranking = sorted(frozen_scores, key=lambda m: frozen_scores[m], reverse=True)
+    curve = regret_curve(proxy_ranking, finetune_scores)
+    log.info("proxy ranking (frozen %s desc): %s", key, ", ".join(proxy_ranking))
 
-    _write_regret_json(output_dir, dataset, proxy_ranking, frozen_r2, finetune_r2, curve)
+    _write_regret_json(
+        output_dir, dataset, key, proxy_ranking, frozen_scores, finetune_scores, curve
+    )
     if wandb_run is not None:
         _log_regret_to_wandb(curve)
     return frozen + finetune
@@ -280,23 +322,24 @@ def run_strategy(
 def _write_regret_json(
     output_dir: str | Path,
     dataset: LoadedDataset,
+    metric: str,
     proxy_ranking: list[str],
-    frozen_r2: dict[str, float],
-    finetune_r2: dict[str, float],
+    frozen_scores: dict[str, float],
+    finetune_scores: dict[str, float],
     curve: list,
 ) -> Path:
     """Write the dataset-level regret summary to ``runs/<id>/regret.json``."""
     path = ensure_run_dir(output_dir) / "regret.json"
     payload = {
         "dataset": dataset.spec.name,
-        "metric": "r2",
+        "metric": metric,
         "higher_is_better": True,
         # head_repeats=1 for finetune, so the SHiFT expectations collapse to point
         # estimates rather than being averaged over runs (see REGRET.md note 2).
         "regret_estimator": "point_estimate",
         "proxy_ranking": proxy_ranking,
-        "frozen_r2": frozen_r2,
-        "finetune_r2": finetune_r2,
+        "frozen_scores": frozen_scores,
+        "finetune_scores": finetune_scores,
         "curve": [p.to_dict() for p in curve],
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True))

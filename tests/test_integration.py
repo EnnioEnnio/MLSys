@@ -85,6 +85,87 @@ def _tiny_dataset(name: str = "synthetic"):
     return ds
 
 
+def _tiny_summarization_dataset(name: str = "synthetic_sum"):
+    from mlsys.datasets import LoadedDataset, Row
+    from mlsys.datasets.registry import DatasetSpec
+
+    class _Split:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def __iter__(self):
+            return iter(self._rows)
+
+        def __len__(self):
+            return len(self._rows)
+
+    spec = DatasetSpec(
+        name=name,
+        hf_repo="local/fake",
+        splits={"train": "train", "val": "val", "test": "test"},
+        target_column="summary",
+        target_type="summarization",
+        text_template="{dialogue}",
+    )
+    docs = [
+        "Tom: are you coming tonight? Amy: yes see you at 8",
+        "Ken: the meeting moved to 3pm. Sue: thanks for letting me know",
+        "Joe: I bought milk and eggs. Pam: great, we needed those",
+        "Ann: the train is delayed again. Bob: ugh, take the bus then",
+    ]
+    sums = [
+        "Amy will meet Tom at 8.",
+        "Meeting moved to 3pm.",
+        "Joe bought groceries.",
+        "Train delayed; take the bus.",
+    ]
+    rows = [Row(text=docs[i % 4], target=sums[i % 4]) for i in range(12)]
+    ds = LoadedDataset.__new__(LoadedDataset)
+    ds.spec = spec
+    ds.splits = {
+        "train": _Split(rows[:8]),
+        "val": _Split(rows[8:10]),
+        "test": _Split(rows[10:]),
+    }
+    return ds
+
+
+def test_seq2seq_generate_and_rouge() -> None:
+    # Real t5-small: generate summaries and score them with ROUGE.
+    from typing import cast
+
+    from mlsys.models.backbone import GenerativeBackbone
+    from mlsys.models.registry import build_backbone, get_spec
+    from mlsys.search.metrics import summarization_metrics
+
+    backbone = cast(GenerativeBackbone, build_backbone(get_spec("t5-small"), device="cpu"))
+    preds = backbone.generate(
+        ["summarize: The quick brown fox jumped over the lazy dog many times all day long."]
+    )
+    assert len(preds) == 1
+    assert isinstance(preds[0], str) and preds[0].strip()
+    m = summarization_metrics(preds, ["A fox jumped over a dog."])
+    assert 0.0 <= m.rougeL <= 1.0
+
+
+def test_summarization_frozen_proxy_end_to_end() -> None:
+    # 1-epoch LM-head-only teacher-forced proxy on a tiny in-memory dataset.
+    from mlsys.models.registry import get_spec
+    from mlsys.search.metrics import SummarizationMetrics
+    from mlsys.search.summarize import SummarizeConfig, score_summarization_candidate
+
+    record = score_summarization_candidate(
+        _tiny_summarization_dataset(),
+        get_spec("t5-small"),
+        device="cpu",
+        config=SummarizeConfig(epochs=1, batch_size=4),
+    )
+    assert record.strategy == "frozen"
+    assert isinstance(record.metrics, SummarizationMetrics)
+    assert record.timing["inference_s"] == 0.0
+    assert record.timing["eval_s"] > 0.0
+
+
 def test_transformers_encoder_finetune_end_to_end() -> None:
     # Real tiny transformers_encoder fine-tuned end-to-end on a tiny in-memory dataset.
     from mlsys.finetune import FinetuneConfig

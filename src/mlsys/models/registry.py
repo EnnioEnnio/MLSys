@@ -16,7 +16,7 @@ REQUIRED_FIELDS = ("name", "hf_repo", "loader", "embedding_dim")
 # The built-in loaders, kept for reference/error messages. Loader validation in
 # load_specs() is dynamic against the *registered* adapter set, so dropping a new
 # self-registering adapter module in adapters/ is enough — no edit here required.
-KNOWN_LOADERS = ("sentence_transformers", "transformers_encoder", "model2vec")
+KNOWN_LOADERS = ("sentence_transformers", "transformers_encoder", "model2vec", "seq2seq_lm")
 
 
 @dataclass(frozen=True)

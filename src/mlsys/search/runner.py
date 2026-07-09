@@ -14,7 +14,7 @@ from mlsys.finetune import FinetuneConfig, train_full_model
 from mlsys.head import FCHead, HeadTrainConfig, train_head
 from mlsys.models.backbone import TrainableBackbone
 from mlsys.models.registry import ModelSpec, build_backbone
-from mlsys.search.metrics import RegressionMetrics, regression_metrics
+from mlsys.search.metrics import RegressionMetrics, SummarizationMetrics, regression_metrics
 from mlsys.search.timing import Timer, reset_peak_gpu_memory
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 class RunRecord:
     dataset: str
     model: str
-    metrics: RegressionMetrics
+    metrics: RegressionMetrics | SummarizationMetrics
     timing: dict[str, float]
     head_train_curve: list[float]
     head_val_curve: list[float]
@@ -61,7 +61,9 @@ def _embed_split(
     batch_targets: list[float] = []
     for row in split:
         batch_texts.append(row.text)
-        batch_targets.append(row.target)
+        # Regression path: Row.target is a float here (summarization uses a separate
+        # runner). float() also narrows the float|str union for the type checker.
+        batch_targets.append(float(row.target))
         if len(batch_texts) == batch_size:
             with torch.inference_mode():
                 emb = backbone.encode(batch_texts)

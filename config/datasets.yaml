@@ -18,3 +18,12 @@
   target_type: regression
   text_template: "status: {status}, bed: {bed}, bath: {bath}, acre_lot: {acre_lot}, street: {street}, city: {city}, state: {state}, zip_code: {zip_code}, house_size: {house_size}, prev_sold_date: {prev_sold_date}"
 
+# Summarization pilot: dialogue -> short abstractive summary (small, cheap ROUGE).
+# `target_column` names the reference-summary column; `text_template` renders the source.
+- name: samsum
+  hf_repo: knkarthick/samsum        # script-free parquet mirror (datasets>=3.0 dropped loading scripts)
+  splits: {train: "train[:2000]", val: "validation[:200]", test: "test[:200]"}
+  target_column: summary
+  target_type: summarization
+  text_template: "{dialogue}"
+

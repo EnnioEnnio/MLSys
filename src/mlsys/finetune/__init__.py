@@ -39,6 +39,11 @@ class FinetuneConfig:
     # Head-only warmup epochs against the frozen backbone before the joint loop
     # (LP-FT, Kumar et al. 2022; issue #31). 0 = off (straight to joint training).
     warmup_epochs: int = 0
+    # Max global L2 norm for the joint loop's gradients (backbone+head as one vector,
+    # `clip_grad_norm_`). 0 = no clipping, but the pre-clip norm is still measured
+    # every step so runs log where the gradients live before a threshold is chosen.
+    # The warmup phase is head-only on the frozen backbone and is never clipped.
+    grad_clipping: float = 0.0
 
 
 def _snapshot(params: list[torch.nn.Parameter]) -> list[torch.Tensor]:
@@ -113,10 +118,15 @@ def train_full_model(
 
     bs = finetune_cfg.batch_size
     tracked = backbone_params + head_params
+    # 0 = measure-only: clip_grad_norm_ with an inf threshold never rescales but
+    # still returns the total pre-clip norm, so the curves below stay populated.
+    max_norm = finetune_cfg.grad_clipping if finetune_cfg.grad_clipping > 0 else float("inf")
     best_val = float("inf")
     best_state = _snapshot(tracked)
     train_curve: list[float] = []
     val_curve: list[float] = []
+    grad_norm_curve: list[float] = []
+    grad_norm_max_curve: list[float] = []
     patience = 0
     epochs_run = 0
 
@@ -127,6 +137,7 @@ def train_full_model(
         perm = torch.randperm(len(train_texts))
         total = 0.0
         seen = 0
+        step_norms: list[float] = []
         for start in range(0, len(train_texts), bs):
             idx = perm[start : start + bs]
             batch_texts = [train_texts[i] for i in idx.tolist()]
@@ -136,10 +147,13 @@ def train_full_model(
             pred = head(emb)
             loss = loss_fn(pred, yb)
             loss.backward()
+            step_norms.append(float(torch.nn.utils.clip_grad_norm_(tracked, max_norm)))
             optim.step()
             total += float(loss.detach()) * len(batch_texts)
             seen += len(batch_texts)
         train_curve.append(total / max(seen, 1))
+        grad_norm_curve.append(sum(step_norms) / len(step_norms))
+        grad_norm_max_curve.append(max(step_norms))
 
         backbone.eval()
         head.eval()
@@ -169,4 +183,6 @@ def train_full_model(
         val_curve=val_curve,
         best_val_mse=best_val,
         epochs_run=epochs_run,
+        grad_norm_curve=grad_norm_curve,
+        grad_norm_max_curve=grad_norm_max_curve,
     )

@@ -158,6 +158,59 @@ def test_warmup_trains_head_but_not_backbone() -> None:
     ), "head params did not change during warmup"
 
 
+def test_grad_norms_measured_even_without_clipping() -> None:
+    # grad_clipping=0 disables rescaling but still measures the pre-clip norm each
+    # step, so the per-epoch curves are populated for threshold tuning.
+    torch.manual_seed(0)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+    backbone = _TrainableFakeBackbone(spec, "cpu")
+    head = FCHead(in_dim=8, hidden=None)
+
+    result = train_full_model(
+        cast(TrainableBackbone, backbone),
+        head,
+        _rows(_FakeDataset()),
+        HeadTrainConfig(),
+        FinetuneConfig(epochs=3, batch_size=4, grad_clipping=0.0),
+        "cpu",
+    )
+
+    assert len(result.grad_norm_curve) == len(result.train_curve)
+    assert len(result.grad_norm_max_curve) == len(result.train_curve)
+    assert all(n > 0 for n in result.grad_norm_curve)
+    assert all(
+        mx >= mean
+        for mean, mx in zip(result.grad_norm_curve, result.grad_norm_max_curve, strict=True)
+    )
+
+
+@pytest.mark.parametrize("grad_clipping,expected_max_norm", [(0.5, 0.5), (0.0, float("inf"))])
+def test_grad_clipping_forwards_max_norm(grad_clipping, expected_max_norm, monkeypatch) -> None:
+    # The configured threshold reaches clip_grad_norm_ verbatim; 0 degrades to inf
+    # (measure-only, no rescaling).
+    torch.manual_seed(0)
+    seen: list[float] = []
+    real = torch.nn.utils.clip_grad_norm_
+
+    def spy(params, max_norm, *args, **kwargs):
+        seen.append(float(max_norm))
+        return real(params, max_norm, *args, **kwargs)
+
+    monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", spy)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+
+    train_full_model(
+        cast(TrainableBackbone, _TrainableFakeBackbone(spec, "cpu")),
+        FCHead(in_dim=8, hidden=None),
+        _rows(_FakeDataset()),
+        HeadTrainConfig(),
+        FinetuneConfig(epochs=1, batch_size=4, grad_clipping=grad_clipping),
+        "cpu",
+    )
+
+    assert seen and set(seen) == {expected_max_norm}
+
+
 @pytest.fixture
 def trainable_loader():
     register_adapter("trainable_fake", lambda spec, device: _TrainableFakeBackbone(spec, device))

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 from torch import nn
@@ -48,6 +48,11 @@ class HeadTrainResult:
     val_curve: list[float]
     best_val_mse: float
     epochs_run: int
+    # Per-epoch pre-clip global grad norm over all trained params (mean / max of the
+    # step norms). Populated by the finetune joint loop only; empty for the frozen
+    # head trainer, which doesn't clip.
+    grad_norm_curve: list[float] = field(default_factory=list)
+    grad_norm_max_curve: list[float] = field(default_factory=list)
 
 
 def _iter_minibatches(

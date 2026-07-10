@@ -12,6 +12,12 @@ from torch import nn
 EpochCallback = Callable[[int, float, float], None]
 
 
+def seed_torch(seed: int) -> None:
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
 class FCHead(nn.Module):
     """Linear-probe head. Single `nn.Linear` by default; optional 2-layer MLP."""
 
@@ -85,9 +91,7 @@ def train_head(
             "(check the dataset splits aren't empty after loading/filtering)"
         )
     if seed is not None:
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
+        seed_torch(seed)
     device = x_train.device
     if head is None:
         head = FCHead(in_dim=x_train.size(1), hidden=config.hidden).to(device)

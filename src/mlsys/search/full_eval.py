@@ -156,6 +156,7 @@ def run_finetune(
 ) -> list[RunRecord]:
     """Finetune pass: unfreeze + jointly train every candidate; append to results.jsonl."""
     specs = _resolve_models(model_names)
+    seed = make_seeds(1)[0]  # if head_repeats > 1 the seeding logic needs to be extended
     return _run_pass(
         specs,
         out_path=results_path(output_dir),
@@ -171,6 +172,7 @@ def run_finetune(
             head_config=head_config,
             finetune_config=finetune_config,
             head_repeats=head_repeats,
+            seed=seed,
             epoch_callback=cb,
         ),
     )

@@ -165,7 +165,13 @@ def train_full_model(
             val_mse = float(loss_fn(val_pred, y_val))
         val_curve.append(val_mse)
         if epoch_callback is not None:
-            epoch_callback(epoch, train_curve[-1], val_curve[-1])
+            epoch_callback(
+                epoch,
+                train_curve[-1],
+                val_curve[-1],
+                grad_norm=grad_norm_curve[-1],
+                grad_norm_max=grad_norm_max_curve[-1],
+            )
 
         if val_mse + finetune_cfg.min_delta < best_val:
             best_val = val_mse

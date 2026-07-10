@@ -211,6 +211,29 @@ def test_grad_clipping_forwards_max_norm(grad_clipping, expected_max_norm, monke
     assert seen and set(seen) == {expected_max_norm}
 
 
+def test_epoch_callback_receives_grad_norms() -> None:
+    # The joint loop attaches per-epoch grad norms as callback extras (streamed to W&B).
+    torch.manual_seed(0)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+    seen: list[dict[str, float]] = []
+
+    def cb(epoch: int, train_mse: float, val_mse: float, **extras: float) -> None:
+        seen.append(extras)
+
+    train_full_model(
+        cast(TrainableBackbone, _TrainableFakeBackbone(spec, "cpu")),
+        FCHead(in_dim=8, hidden=None),
+        _rows(_FakeDataset()),
+        HeadTrainConfig(),
+        FinetuneConfig(epochs=2, batch_size=4),
+        "cpu",
+        epoch_callback=cb,
+    )
+
+    assert seen
+    assert all(e["grad_norm"] > 0 and e["grad_norm_max"] >= e["grad_norm"] for e in seen)
+
+
 @pytest.fixture
 def trainable_loader():
     register_adapter("trainable_fake", lambda spec, device: _TrainableFakeBackbone(spec, device))
@@ -254,6 +277,23 @@ def test_finetune_candidate_with_warmup_keeps_timing_contract(trainable_loader) 
     assert record.timing["train_head_s"] > 0.0
 
 
+def test_finetune_candidate_reports_grad_stats(trainable_loader) -> None:
+    # Scalar grad-norm summaries land in extras (results table / CSV); the per-epoch
+    # curves land on the record itself (results.jsonl).
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="trainable_fake", embedding_dim=8)
+    record = finetune_candidate(
+        cast(LoadedDataset, _FakeDataset()),
+        spec,
+        device="cpu",
+        finetune_config=FinetuneConfig(epochs=2, batch_size=4, grad_clipping=1.0),
+    )
+    assert record.extras["grad_clipping"] == 1.0
+    assert record.extras["grad_norm_mean"] > 0
+    assert record.extras["grad_norm_max"] >= record.extras["grad_norm_mean"]
+    assert record.grad_norm_curve and record.grad_norm_max_curve
+    assert record.to_dict()["grad_norm_curve"] == record.grad_norm_curve
+
+
 def test_finetune_candidate_falls_back_for_static(static_loader) -> None:
     spec = ModelSpec(name="static", hf_repo="local/fake", loader="static_fake", embedding_dim=8)
     record = finetune_candidate(
@@ -265,3 +305,6 @@ def test_finetune_candidate_falls_back_for_static(static_loader) -> None:
     assert record.strategy == "finetune"
     assert record.extras.get("finetune_skipped") is True
     assert isinstance(record.metrics, RegressionMetrics)
+    # Grad-stat columns stay schema-stable across skipped and trained finetune rows.
+    assert record.extras["grad_norm_mean"] is None
+    assert record.extras["grad_clipping"] == FinetuneConfig().grad_clipping

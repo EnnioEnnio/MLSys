@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass, field
+from typing import Protocol
 
 import torch
 from torch import nn
 
-# (epoch, train_mse, val_mse) -> None; invoked after each epoch so callers can stream curves.
-EpochCallback = Callable[[int, float, float], None]
+
+class EpochCallback(Protocol):
+    """Invoked after each epoch so callers can stream curves.
+
+    Trainers may attach extra per-epoch scalars as keyword floats (e.g. the finetune
+    joint loop's ``grad_norm``/``grad_norm_max``); implementations must accept them.
+    """
+
+    def __call__(self, epoch: int, train_mse: float, val_mse: float, **extras: float) -> None: ...
 
 
 class FCHead(nn.Module):

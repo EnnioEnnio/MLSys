@@ -297,8 +297,10 @@ def _make_epoch_logger(model: str, strategy: str, wandb_run: object) -> EpochCal
     """Build a per-epoch callback that streams train/val MSE live to W&B.
 
     Keyed by ``<model>/<strategy>/{train,val}_mse`` so passes (frozen vs finetune) land on
-    distinct series on the same run. For frozen's repeated heads all repeats stream under the
-    same keys — the curves are a visual anchor; the averaged results table is authoritative.
+    distinct series on the same run. Any extras the trainer attaches (finetune's per-epoch
+    ``grad_norm``/``grad_norm_max``) stream under the same prefix. For frozen's repeated heads
+    all repeats stream under the same keys — the curves are a visual anchor; the averaged
+    results table is authoritative.
 
     Each model/pass gets its own ``<model>/<strategy>/epoch`` step-metric so its MSE curves
     plot against that model's own 0-based epoch. Without this the charts default to W&B's
@@ -311,21 +313,23 @@ def _make_epoch_logger(model: str, strategy: str, wandb_run: object) -> EpochCal
 
     step_metric = f"{model}/{strategy}/epoch"
     wandb.define_metric(step_metric)
-    wandb.define_metric(f"{model}/{strategy}/train_mse", step_metric=step_metric)
-    wandb.define_metric(f"{model}/{strategy}/val_mse", step_metric=step_metric)
+    # grad_norm/grad_norm_max only arrive as extras from the finetune joint loop;
+    # defining them for the frozen pass too is harmless (the keys are never logged).
+    for key in ("train_mse", "val_mse", "grad_norm", "grad_norm_max"):
+        wandb.define_metric(f"{model}/{strategy}/{key}", step_metric=step_metric)
 
-    def _log(epoch: int, train_mse: float, val_mse: float) -> None:
+    def _log(epoch: int, train_mse: float, val_mse: float, **extras: float) -> None:
         # Imported lazily so the unused-without-flag path stays free of the dep.
         import wandb  # type: ignore[import-not-found]
 
-        wandb.log(
-            {
-                f"{model}/{strategy}/train_mse": train_mse,
-                f"{model}/{strategy}/val_mse": val_mse,
-                step_metric: epoch,
-                "epoch": epoch,
-            }
-        )
+        payload = {
+            f"{model}/{strategy}/train_mse": train_mse,
+            f"{model}/{strategy}/val_mse": val_mse,
+            step_metric: epoch,
+            "epoch": epoch,
+        }
+        payload.update({f"{model}/{strategy}/{key}": value for key, value in extras.items()})
+        wandb.log(payload)
 
     return _log
 

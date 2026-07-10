@@ -26,6 +26,7 @@ export FINETUNE_EPOCHS=${FINETUNE_EPOCHS:-10}          # joint-loop epochs
 export WARMUP_EPOCHS=${WARMUP_EPOCHS:-2}               # head-only warmup epochs before the joint loop; 0 = off
 export FINETUNE_LR=${FINETUNE_LR:-2e-5}                # backbone learning rate
 export FINETUNE_BATCH_SIZE=${FINETUNE_BATCH_SIZE:-64}  # joint-loop batch size
+export GRAD_CLIPPING=${GRAD_CLIPPING:-0}               # joint-loop max grad norm; 0 = off (norm still logged)
 
 # --- SLURM shape ---
 THROTTLE=${THROTTLE:-4}          # max concurrent array tasks (%N)
@@ -43,7 +44,7 @@ N=$(python -m mlsys list-models --count 2>/dev/null || true)
 
 echo "Submitting array over $N models (0-$((N - 1)), throttle %$THROTTLE)"
 echo "  dataset=$DATASET hidden=$HIDDEN head_repeats=$HEAD_REPEATS epochs=$EPOCHS batch_size=$BATCH_SIZE"
-echo "  finetune: epochs=$FINETUNE_EPOCHS warmup_epochs=$WARMUP_EPOCHS lr=$FINETUNE_LR batch_size=$FINETUNE_BATCH_SIZE"
+echo "  finetune: epochs=$FINETUNE_EPOCHS warmup_epochs=$WARMUP_EPOCHS lr=$FINETUNE_LR batch_size=$FINETUNE_BATCH_SIZE grad_clipping=$GRAD_CLIPPING"
 ARRAY_ID=$(sbatch --parsable --array=0-$((N - 1))%"$THROTTLE" --export=ALL \
   slurm/array_search.slurm)
 echo "Array job: $ARRAY_ID"

@@ -29,6 +29,7 @@ DATASET=wine_reviews HIDDEN=512 FINETUNE_LR=1e-5 bash slurm/submit.sh
 | `WARMUP_EPOCHS` | `2` | `--warmup-epochs` (head-only LP-FT warmup before the joint loop; 0 = off) |
 | `FINETUNE_LR` | `2e-5` | `--finetune-lr` |
 | `FINETUNE_BATCH_SIZE` | `64` | `--finetune-batch-size` |
+| `GRAD_CLIPPING` | `0` (off) | `--grad-clipping` (max global grad norm in the joint loop; 0 = off, the pre-clip norm is still logged) |
 | `THROTTLE` | `4` | max concurrent array tasks (`%N`) |
 
 The consolidate job is pure CPU work and runs on `cpu-batch`; only the array tasks occupy GPUs.

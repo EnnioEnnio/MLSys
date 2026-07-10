@@ -11,7 +11,7 @@ import torch
 
 from mlsys.datasets.registry import REQUIRED_SPLITS
 from mlsys.finetune import FinetuneConfig, train_full_model
-from mlsys.head import FCHead, HeadTrainConfig, train_head
+from mlsys.head import EpochCallback, FCHead, HeadTrainConfig, train_head
 from mlsys.models.backbone import TrainableBackbone
 from mlsys.models.registry import ModelSpec, build_backbone
 from mlsys.search.metrics import RegressionMetrics, SummarizationMetrics, regression_metrics
@@ -121,6 +121,7 @@ def score_candidate(
     head_config: HeadTrainConfig | None = None,
     head_repeats: int = 3,
     seeds: Sequence[int | None] | None = None,
+    epoch_callback: EpochCallback | None = None,
 ) -> RunRecord:
     """Train an FC head on `dataset` using embeddings from `spec`'s backbone, score on test.
 
@@ -148,7 +149,9 @@ def score_candidate(
 
     with timer.section("train_head_s"):
         head_results = [
-            train_head(x_train, y_train, x_val, y_val, head_config, seeds[i])
+            train_head(
+                x_train, y_train, x_val, y_val, head_config, seeds[i], epoch_callback=epoch_callback
+            )
             for i in range(head_repeats)
         ]
 
@@ -193,6 +196,7 @@ def finetune_candidate(
     head_config: HeadTrainConfig | None = None,
     finetune_config: FinetuneConfig | None = None,
     head_repeats: int = 1,
+    epoch_callback: EpochCallback | None = None,
 ) -> RunRecord:
     """Unfreeze the backbone and train backbone+head jointly, then score on test.
 
@@ -226,6 +230,7 @@ def finetune_candidate(
             batch_size=batch_size,
             head_config=head_config,
             head_repeats=head_repeats,
+            epoch_callback=epoch_callback,
         )
         record.strategy = "finetune"
         record.extras["finetune_skipped"] = True
@@ -241,7 +246,9 @@ def finetune_candidate(
 
     with timer.section("train_head_s"):
         # Inference is fused into the joint loop, so inference_s stays 0 for finetune.
-        result = train_full_model(trainable, head, rows, head_config, finetune_config, device)
+        result = train_full_model(
+            trainable, head, rows, head_config, finetune_config, device, epoch_callback
+        )
 
     with timer.section("eval_s"):
         trainable.eval()

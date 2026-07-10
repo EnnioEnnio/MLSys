@@ -5,14 +5,18 @@ the backbone and trains it jointly with the head. Inference is fused into traini
 each step does ``head(backbone.encode_trainable(texts))`` so there is no separate embedding
 pass. The trained head is returned in a :class:`~mlsys.head.HeadTrainResult` (same shape as
 the frozen path) and the backbone is mutated in place, restored to its best-val state.
+
+An optional head-only warmup phase (LP-FT, Kumar et al. 2022; ``warmup_epochs > 0``)
+trains the head against the *frozen* backbone before the joint loop, so a random head
+doesn't backprop feature-distorting gradients into the pretrained backbone (issue #31).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from mlsys.head import FCHead, HeadTrainConfig, HeadTrainResult
+from mlsys.head import EpochCallback, FCHead, HeadTrainConfig, HeadTrainResult, train_head
 
 if TYPE_CHECKING:
     import torch
@@ -32,6 +36,9 @@ class FinetuneConfig:
     weight_decay: float = 1e-4
     early_stop_patience: int = 3
     min_delta: float = 1e-3
+    # Head-only warmup epochs against the frozen backbone before the joint loop
+    # (LP-FT, Kumar et al. 2022; issue #31). 0 = off (straight to joint training).
+    warmup_epochs: int = 0
 
 
 def _snapshot(params: list[torch.nn.Parameter]) -> list[torch.Tensor]:
@@ -53,6 +60,7 @@ def train_full_model(
     head_cfg: HeadTrainConfig,
     finetune_cfg: FinetuneConfig,
     device: str,
+    epoch_callback: EpochCallback | None = None,
 ) -> HeadTrainResult:
     """Train ``backbone`` + ``head`` jointly with AdamW (two LR groups) + MSE, early-stopping
     on val MSE. The backbone is mutated in place and left in its best-val state; the trained
@@ -73,6 +81,24 @@ def train_full_model(
     y_train = torch.tensor([r.target for r in train_rows], dtype=torch.float32, device=device)
     val_texts = [r.text for r in val_rows]
     y_val = torch.tensor([r.target for r in val_rows], dtype=torch.float32, device=device)
+
+    # LP-FT warmup: fit the head on the frozen backbone first, so the joint loop starts
+    # from a sane head instead of backprop'ing random-head gradients into the backbone
+    # (issue #31). Must precede the best_state snapshot below so the warmed-up state is
+    # the early-stop baseline. Uses head_cfg.lr (the frozen path's LR); its cost lands in
+    # train_head_s (finetune_candidate wraps this whole call in that timer section).
+    if finetune_cfg.warmup_epochs > 0:
+        bs = finetune_cfg.batch_size
+        backbone.eval()
+        with torch.no_grad():
+            x_train = torch.cat(
+                [backbone.encode(train_texts[s : s + bs]) for s in range(0, len(train_texts), bs)]
+            )
+            x_val = torch.cat(
+                [backbone.encode(val_texts[s : s + bs]) for s in range(0, len(val_texts), bs)]
+            )
+        warmup_cfg = replace(head_cfg, epochs=finetune_cfg.warmup_epochs)
+        train_head(x_train, y_train, x_val, y_val, warmup_cfg, head=head)
 
     backbone_params = list(backbone.parameters())
     head_params = list(head.parameters())
@@ -124,6 +150,8 @@ def train_full_model(
             val_pred = torch.cat(preds)
             val_mse = float(loss_fn(val_pred, y_val))
         val_curve.append(val_mse)
+        if epoch_callback is not None:
+            epoch_callback(epoch, train_curve[-1], val_curve[-1])
 
         if val_mse + finetune_cfg.min_delta < best_val:
             best_val = val_mse

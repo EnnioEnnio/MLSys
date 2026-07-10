@@ -1,4 +1,4 @@
-"""CLI: ``python -m mlsys {search,list-models,list-datasets}``."""
+"""CLI: ``python -m mlsys {search,consolidate,list-models,list-datasets,analyze,regret}``."""
 
 from __future__ import annotations
 
@@ -108,6 +108,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="epochs for the finetune/full_eval joint loop (default: %(default)s)",
     )
     search.add_argument(
+        "--warmup-epochs",
+        type=int,
+        default=FinetuneConfig.warmup_epochs,
+        help="head-only warmup epochs with the backbone frozen before the finetune/full_eval "
+        "joint loop (LP-FT; 0 = off, default: %(default)s)",
+    )
+    search.add_argument(
         "--finetune-lr",
         type=float,
         default=FinetuneConfig.backbone_lr,
@@ -126,8 +133,52 @@ def _build_parser() -> argparse.ArgumentParser:
         help="(v2) cache extracted embeddings on disk; currently stubbed",
     )
 
-    sub.add_parser("list-models", help="Dump models.yaml entries.")
+    list_models = sub.add_parser("list-models", help="Dump models.yaml entries.")
+    list_models.add_argument(
+        "--index",
+        type=int,
+        default=None,
+        metavar="N",
+        help="print only the bare model name at registry position N (for SLURM array tasks)",
+    )
+    list_models.add_argument(
+        "--count",
+        action="store_true",
+        help="print only the pool size (single source of truth for the --array bound)",
+    )
     sub.add_parser("list-datasets", help="Dump datasets.yaml entries.")
+
+    consolidate = sub.add_parser(
+        "consolidate",
+        help="Merge a job array's *_task_*/results.jsonl fragments and recompute regret.json.",
+    )
+    consolidate.add_argument(
+        "run_dir",
+        help="experiment dir holding the *_task_* fragment dirs (runs/<ARRAY_JOB_ID>)",
+    )
+    consolidate.add_argument(
+        "--hidden",
+        type=int,
+        default=HeadTrainConfig.hidden,
+        metavar="WIDTH",
+        help="head hidden width the tasks ran with; only shapes the exported "
+        "run name's head token (FCH / MLP_<WIDTH>)",
+    )
+    consolidate.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="remove the *_task_* fragment dirs after a successful merge",
+    )
+    consolidate.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="merge even if frozen/finetune rows are missing (skips regret.json)",
+    )
+    consolidate.add_argument(
+        "--wandb",
+        action="store_true",
+        help="push one consolidated W&B run (results_frozen/results_finetune tables + regret)",
+    )
 
     analyze = sub.add_parser(
         "analyze",
@@ -179,7 +230,21 @@ def main(argv: list[str] | None = None) -> int:
     _setup_logging(getattr(args, "verbose", False))
 
     if args.command == "list-models":
-        for spec in load_model_specs().values():
+        specs = list(load_model_specs().values())
+        if args.count:
+            print(len(specs))
+            return 0
+        if args.index is not None:
+            # A bad SLURM --array bound must fail loudly so afterok blocks consolidation.
+            if not 0 <= args.index < len(specs):
+                print(
+                    f"model index {args.index} out of range (pool size {len(specs)})",
+                    file=sys.stderr,
+                )
+                return 1
+            print(specs[args.index].name)
+            return 0
+        for spec in specs:
             print(
                 f"{spec.name:30s}  loader={spec.loader:24s}  dim={spec.embedding_dim:5d}  "
                 f"max_len={spec.max_length}  repo={spec.hf_repo}"
@@ -196,6 +261,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "search":
         return _run_search(args)
+
+    if args.command == "consolidate":
+        return _run_consolidate(args)
 
     if args.command == "analyze":
         return _run_analyze(args)
@@ -231,6 +299,56 @@ def _run_regret(args: argparse.Namespace) -> int:
         print(curve.to_csv(index=False), end="")
     if args.json_path:
         print(f"[mlsys] wrote regret json to {args.json_path}", file=sys.stderr)
+    return 0
+
+
+def _run_consolidate(args: argparse.Namespace) -> int:
+    # Lazy import: consolidation is stdlib-only but pulls in the search package.
+    from mlsys.search.consolidate import consolidate_run, flatten_row
+
+    result = consolidate_run(
+        args.run_dir,
+        hidden=args.hidden,
+        cleanup=args.cleanup,
+        allow_partial=args.allow_partial,
+    )
+    print(f"[mlsys] wrote {len(result.rows)} rows to {result.results_path}")
+    if result.regret_path is not None:
+        print(f"[mlsys] wrote regret curve to {result.regret_path}")
+    else:
+        print("[mlsys] partial pool — regret.json skipped", file=sys.stderr)
+    for path in result.csv_paths:
+        print(f"[mlsys] wrote {path}")
+
+    if args.wandb:
+        import wandb  # type: ignore[import-not-found]
+
+        from mlsys.search.full_eval import _log_regret_to_wandb
+
+        run = wandb.init(
+            entity="HPI_MLSys",
+            project="mlsys-model-search",
+            name=result.run_name,
+            config={
+                "dataset": result.dataset,
+                "strategy": "full_eval",
+                "hidden": args.hidden,
+                "consolidated_from": args.run_dir,
+            },
+        )
+        # Two tables, named exactly as a single-node full_eval's passes, so the
+        # analysis CSV-download workflow keeps working unchanged.
+        tables = (("frozen", "results_frozen"), ("finetune", "results_finetune"))
+        for strategy, table_name in tables:
+            flat = [flatten_row(r) for r in result.rows if r["strategy"] == strategy]
+            if not flat:
+                continue
+            columns = list(flat[0].keys())
+            data = [[row.get(c) for c in columns] for row in flat]
+            wandb.log({table_name: wandb.Table(columns=columns, data=data)})
+        if result.summary is not None:
+            _log_regret_to_wandb(result.summary.curve)
+        run.finish()
     return 0
 
 
@@ -276,6 +394,7 @@ def _run_search(args: argparse.Namespace) -> int:
         epochs=args.finetune_epochs,
         batch_size=args.finetune_batch_size,
         backbone_lr=args.finetune_lr,
+        warmup_epochs=args.warmup_epochs,
     )
 
     wandb_run = None
@@ -300,6 +419,7 @@ def _run_search(args: argparse.Namespace) -> int:
                 "finetune_epochs": finetune_cfg.epochs,
                 "finetune_batch_size": finetune_cfg.batch_size,
                 "finetune_backbone_lr": finetune_cfg.backbone_lr,
+                "finetune_warmup_epochs": finetune_cfg.warmup_epochs,
             },
         )
 

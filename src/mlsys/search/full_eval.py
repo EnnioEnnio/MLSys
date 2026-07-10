@@ -15,17 +15,16 @@ distinguishes frozen vs finetune rows in a full_eval run).
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from mlsys.finetune import FinetuneConfig
-from mlsys.head import HeadTrainConfig
-from mlsys.io import JsonlWriter, ensure_run_dir, results_path
+from mlsys.head import EpochCallback, HeadTrainConfig
+from mlsys.io import JsonlWriter, results_path
 from mlsys.models.registry import ModelSpec, load_specs
-from mlsys.search.regret import regret_curve
+from mlsys.search.regret import summarize_regret, write_regret_json
 from mlsys.search.runner import (
     RunRecord,
     finetune_candidate,
@@ -76,7 +75,7 @@ def _run_pass(
     specs: list[ModelSpec],
     *,
     out_path: Path,
-    candidate_fn: Callable[[ModelSpec], RunRecord],
+    candidate_fn: Callable[[ModelSpec, EpochCallback | None], RunRecord],
     device: str,
     wandb_run: object | None,
     table_name: str,
@@ -89,7 +88,13 @@ def _run_pass(
     with JsonlWriter(out_path) as writer:
         for i, spec in enumerate(specs, start=1):
             log.info("[%s %d/%d] %s — starting", pass_name, i, total, spec.name)
-            record = candidate_fn(spec)
+            # Stream per-epoch curves live to W&B (no-op when W&B is off).
+            cb = (
+                _make_epoch_logger(spec.name, pass_name, wandb_run)
+                if wandb_run is not None
+                else None
+            )
+            record = candidate_fn(spec, cb)
             total_s = sum(record.timing.get(k, 0.0) for k in _TIMING_KEYS)
             metrics_str = " ".join(f"{k}={v:.4f}" for k, v in record.metrics.to_dict().items())
             log.info(
@@ -103,8 +108,6 @@ def _run_pass(
             )
             writer.write(record.to_dict())
             records.append(record)
-            if wandb_run is not None:
-                _log_curves_to_wandb(record)
             # Per-candidate GPU tensors are now dereferenced; reclaim them so the
             # next candidate starts clean.
             release_gpu_memory(device)
@@ -135,12 +138,14 @@ def run_frozen(
     if dataset.spec.target_type == "summarization":
         cfg = SummarizeConfig()
 
-        def candidate_fn(spec: ModelSpec) -> RunRecord:
+        # Summarization candidates don't stream per-epoch curves yet, so the callback is
+        # accepted (to match _run_pass's signature) but unused.
+        def candidate_fn(spec: ModelSpec, _cb: EpochCallback | None) -> RunRecord:
             return score_summarization_candidate(dataset, spec, device=device, config=cfg)
     else:
         seeds = make_seeds(head_repeats)
 
-        def candidate_fn(spec: ModelSpec) -> RunRecord:
+        def candidate_fn(spec: ModelSpec, _cb: EpochCallback | None) -> RunRecord:
             return score_candidate(
                 dataset,
                 spec,
@@ -149,6 +154,7 @@ def run_frozen(
                 head_config=head_config,
                 head_repeats=head_repeats,
                 seeds=seeds,
+                epoch_callback=_cb,
             )
 
     return _run_pass(
@@ -184,11 +190,11 @@ def run_finetune(
     if dataset.spec.target_type == "summarization":
         cfg = SummarizeConfig()
 
-        def candidate_fn(spec: ModelSpec) -> RunRecord:
+        def candidate_fn(spec: ModelSpec, _cb: EpochCallback | None) -> RunRecord:
             return finetune_summarization_candidate(dataset, spec, device=device, config=cfg)
     else:
 
-        def candidate_fn(spec: ModelSpec) -> RunRecord:
+        def candidate_fn(spec: ModelSpec, _cb: EpochCallback | None) -> RunRecord:
             return finetune_candidate(
                 dataset,
                 spec,
@@ -197,6 +203,7 @@ def run_finetune(
                 head_config=head_config,
                 finetune_config=finetune_config,
                 head_repeats=head_repeats,
+                epoch_callback=_cb,
             )
 
     return _run_pass(
@@ -252,18 +259,17 @@ def run_full_eval(
     )
 
     log.info("full_eval on %s: phase 3/3 — computing regret curve", dataset.spec.name)
+    # Metric-agnostic: pick the higher-is-better score per task type (r2 / rougeL) and read
+    # it from each record's to_dict() so the same code path serves both tasks.
     key = PRIMARY_METRIC[dataset.spec.target_type]
     frozen_scores = {r.model: r.metrics.to_dict()[key] for r in frozen}
     finetune_scores = {r.model: r.metrics.to_dict()[key] for r in finetune}
-    proxy_ranking = sorted(frozen_scores, key=lambda m: frozen_scores[m], reverse=True)
-    curve = regret_curve(proxy_ranking, finetune_scores)
-    log.info("proxy ranking (frozen %s desc): %s", key, ", ".join(proxy_ranking))
+    summary = summarize_regret(dataset.spec.name, frozen_scores, finetune_scores, metric=key)
+    log.info("proxy ranking (frozen %s desc): %s", key, ", ".join(summary.proxy_ranking))
 
-    _write_regret_json(
-        output_dir, dataset, key, proxy_ranking, frozen_scores, finetune_scores, curve
-    )
+    write_regret_json(output_dir, summary)
     if wandb_run is not None:
-        _log_regret_to_wandb(curve)
+        _log_regret_to_wandb(summary.curve)
     return frozen + finetune
 
 
@@ -319,33 +325,6 @@ def run_strategy(
     raise ValueError(f"unknown strategy {strategy!r}; choose from {STRATEGIES}")
 
 
-def _write_regret_json(
-    output_dir: str | Path,
-    dataset: LoadedDataset,
-    metric: str,
-    proxy_ranking: list[str],
-    frozen_scores: dict[str, float],
-    finetune_scores: dict[str, float],
-    curve: list,
-) -> Path:
-    """Write the dataset-level regret summary to ``runs/<id>/regret.json``."""
-    path = ensure_run_dir(output_dir) / "regret.json"
-    payload = {
-        "dataset": dataset.spec.name,
-        "metric": metric,
-        "higher_is_better": True,
-        # head_repeats=1 for finetune, so the SHiFT expectations collapse to point
-        # estimates rather than being averaged over runs (see REGRET.md note 2).
-        "regret_estimator": "point_estimate",
-        "proxy_ranking": proxy_ranking,
-        "frozen_scores": frozen_scores,
-        "finetune_scores": finetune_scores,
-        "curve": [p.to_dict() for p in curve],
-    }
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True))
-    return path
-
-
 def _result_row(record: RunRecord) -> dict[str, object]:
     return {
         "model": record.model,
@@ -358,20 +337,41 @@ def _result_row(record: RunRecord) -> dict[str, object]:
     }
 
 
-def _log_curves_to_wandb(record: RunRecord) -> None:
-    # Imported lazily so the unused-without-flag path stays free of the dep.
+def _make_epoch_logger(model: str, strategy: str, wandb_run: object) -> EpochCallback:
+    """Build a per-epoch callback that streams train/val MSE live to W&B.
+
+    Keyed by ``<model>/<strategy>/{train,val}_mse`` so passes (frozen vs finetune) land on
+    distinct series on the same run. For frozen's repeated heads all repeats stream under the
+    same keys — the curves are a visual anchor; the averaged results table is authoritative.
+
+    Each model/pass gets its own ``<model>/<strategy>/epoch`` step-metric so its MSE curves
+    plot against that model's own 0-based epoch. Without this the charts default to W&B's
+    run-global auto-step, which keeps incrementing across models, so the next model's curve
+    would start where the previous one left off (e.g. step 25) instead of resetting to 0. The
+    plain ``epoch`` scalar is still logged for the single global epoch chart (x=step, y=epoch).
+    """
+    del wandb_run  # Presence already gated by the caller; the closure re-imports wandb.
     import wandb  # type: ignore[import-not-found]
 
-    for epoch, (tr, va) in enumerate(
-        zip(record.head_train_curve, record.head_val_curve, strict=False)
-    ):
+    step_metric = f"{model}/{strategy}/epoch"
+    wandb.define_metric(step_metric)
+    wandb.define_metric(f"{model}/{strategy}/train_mse", step_metric=step_metric)
+    wandb.define_metric(f"{model}/{strategy}/val_mse", step_metric=step_metric)
+
+    def _log(epoch: int, train_mse: float, val_mse: float) -> None:
+        # Imported lazily so the unused-without-flag path stays free of the dep.
+        import wandb  # type: ignore[import-not-found]
+
         wandb.log(
             {
-                f"{record.model}/{record.strategy}/train_mse": tr,
-                f"{record.model}/{record.strategy}/val_mse": va,
+                f"{model}/{strategy}/train_mse": train_mse,
+                f"{model}/{strategy}/val_mse": val_mse,
+                step_metric: epoch,
                 "epoch": epoch,
             }
         )
+
+    return _log
 
 
 def _log_results_table(records: list[RunRecord], *, name: str = "results") -> None:

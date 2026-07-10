@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 import torch
 from torch import nn
+
+# (epoch, train_mse, val_mse) -> None; invoked after each epoch so callers can stream curves.
+EpochCallback = Callable[[int, float, float], None]
 
 
 class FCHead(nn.Module):
@@ -64,8 +67,15 @@ def train_head(
     y_val: torch.Tensor,
     config: HeadTrainConfig | None = None,
     seed: int | None = None,
+    epoch_callback: EpochCallback | None = None,
+    head: FCHead | None = None,
 ) -> HeadTrainResult:
-    """Train an FCHead with AdamW + MSE, early-stop on val-MSE plateau."""
+    """Train an FCHead with AdamW + MSE, early-stop on val-MSE plateau.
+
+    Pass ``head`` to train an existing FCHead in place (e.g. the LP-FT warmup phase);
+    its ``in_dim``/``hidden`` come from the module, so ``config.hidden`` is ignored.
+    Otherwise a fresh FCHead is built from ``x_train`` width + ``config.hidden``.
+    """
     if config is None:
         config = HeadTrainConfig()
     if x_train.size(0) == 0 or x_val.size(0) == 0:
@@ -79,7 +89,8 @@ def train_head(
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
     device = x_train.device
-    head = FCHead(in_dim=x_train.size(1), hidden=config.hidden).to(device)
+    if head is None:
+        head = FCHead(in_dim=x_train.size(1), hidden=config.hidden).to(device)
     optim = torch.optim.AdamW(head.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     loss_fn = nn.MSELoss()
 
@@ -110,6 +121,8 @@ def train_head(
             val_pred = head(x_val)
             val_mse = float(loss_fn(val_pred, y_val))
         val_curve.append(val_mse)
+        if epoch_callback is not None:
+            epoch_callback(epoch, train_curve[-1], val_curve[-1])
 
         if val_mse + config.min_delta < best_val:
             best_val = val_mse

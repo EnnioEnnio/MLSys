@@ -66,8 +66,11 @@ def train_full_model(
     on val MSE. The backbone is mutated in place and left in its best-val state; the trained
     head comes back inside the returned result.
     """
+    import math
+
     import torch
     from torch import nn
+    from transformers import get_linear_schedule_with_warmup
 
     train_rows = rows["train"]
     val_rows = rows["val"]
@@ -112,6 +115,16 @@ def train_full_model(
     loss_fn = nn.MSELoss()
 
     bs = finetune_cfg.batch_size
+    # Linear warmup (10% of steps) then linear decay to 0, per-batch (not per-epoch).
+    # An early stop before finetune_cfg.epochs completes leaves the schedule mid-decay
+    # rather than fully at 0 — expected, matches HF Trainer's own early-stop behavior.
+    steps_per_epoch = math.ceil(len(train_texts) / bs)
+    total_steps = steps_per_epoch * finetune_cfg.epochs
+    warmup_ratio: float = 0.1
+    warmup_steps = max(1, int(warmup_ratio * total_steps))
+    scheduler = get_linear_schedule_with_warmup(
+        optim, num_warmup_steps=warmup_steps, num_training_steps=total_steps
+    )
     tracked = backbone_params + head_params
     best_val = float("inf")
     best_state = _snapshot(tracked)
@@ -137,6 +150,7 @@ def train_full_model(
             loss = loss_fn(pred, yb)
             loss.backward()
             optim.step()
+            scheduler.step()
             total += float(loss.detach()) * len(batch_texts)
             seen += len(batch_texts)
         train_curve.append(total / max(seen, 1))

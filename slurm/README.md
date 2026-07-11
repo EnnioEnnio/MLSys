@@ -22,6 +22,7 @@ DATASET=wine_reviews HIDDEN=512 FINETUNE_LR=1e-5 bash slurm/submit.sh
 |---|---|---|
 | `DATASET` | `wine_reviews` | `--dataset` |
 | `HIDDEN` | `256` (MLP - 0 for linear probe) | `--hidden` |
+| `ACTIVATION` | `relu` | `--activation` (`relu`/`gelu`/`tanh`/`silu` between the MLP head's two layers; ignored when `HIDDEN=0`) |
 | `HEAD_REPEATS` | `1` | `--head-repeats` |
 | `EPOCHS` | `30` | `--epochs` |
 | `BATCH_SIZE` | `64` | `--batch-size` |

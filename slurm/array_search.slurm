@@ -42,6 +42,7 @@ OUT=/workspace/runs/${RUN_ID}/${RUN_ID}_task_${SLURM_ARRAY_TASK_ID}
 # submit.sh's and only cover direct sbatch retries.
 DATASET=${DATASET:-wine_reviews}
 HIDDEN=${HIDDEN:-256}
+ACTIVATION=${ACTIVATION:-relu}
 HEAD_REPEATS=${HEAD_REPEATS:-1}
 EPOCHS=${EPOCHS:-30}
 BATCH_SIZE=${BATCH_SIZE:-64}
@@ -97,11 +98,11 @@ echo "Running model search for task $SLURM_ARRAY_TASK_ID..."
 # locking fixed-size blocks (see search.slurm for the full rationale).
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-export OUT DATASET HIDDEN HEAD_REPEATS EPOCHS BATCH_SIZE \
+export OUT DATASET HIDDEN ACTIVATION HEAD_REPEATS EPOCHS BATCH_SIZE \
        FINETUNE_EPOCHS WARMUP_EPOCHS FINETUNE_LR FINETUNE_BATCH_SIZE GRAD_CLIPPING
 srun --container-name=$CONTAINER_NAME \
      --container-mounts=$REPO_PATH:/workspace \
-     --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF,SLURM_ARRAY_TASK_ID,OUT,DATASET,HIDDEN,HEAD_REPEATS,EPOCHS,BATCH_SIZE,FINETUNE_EPOCHS,WARMUP_EPOCHS,FINETUNE_LR,FINETUNE_BATCH_SIZE,GRAD_CLIPPING \
+     --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF,SLURM_ARRAY_TASK_ID,OUT,DATASET,HIDDEN,ACTIVATION,HEAD_REPEATS,EPOCHS,BATCH_SIZE,FINETUNE_EPOCHS,WARMUP_EPOCHS,FINETUNE_LR,FINETUNE_BATCH_SIZE,GRAD_CLIPPING \
      --container-workdir=/workspace \
      bash -c '
 set -euo pipefail
@@ -116,6 +117,7 @@ python -m mlsys search \
   --strategy full_eval \
   --models "$MODEL" \
   --hidden "$HIDDEN" \
+  --activation "$ACTIVATION" \
   --head-repeats "$HEAD_REPEATS" \
   --epochs "$EPOCHS" \
   --batch-size "$BATCH_SIZE" \

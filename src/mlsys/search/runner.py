@@ -179,9 +179,11 @@ def score_candidate(
         epochs_run=round(sum(r.epochs_run for r in head_results) / len(head_results)),
         extras={
             "embedding_dim": spec.embedding_dim,
-            # Mirror FCHead's own linear/mlp decision (hidden None *or* <= 0 -> linear).
-            "head_type": ("mlp" if head_config.hidden and head_config.hidden > 0 else "linear"),
+            "head_type": _head_type(head_config),
             "head_repeats": head_repeats,
+            # Inert on the linear path (no activation there), but recorded on every
+            # row so frozen and finetune keep one column schema.
+            "activation": head_config.activation,
         },
     )
 
@@ -255,7 +257,11 @@ def finetune_candidate(
     with timer.section("prepare_data_s"):
         rows = {split: list(dataset.split(split)) for split in REQUIRED_SPLITS}
 
-    head = FCHead(in_dim=backbone.embedding_dim, hidden=head_config.hidden).to(device)
+    head = FCHead(
+        in_dim=backbone.embedding_dim,
+        hidden=head_config.hidden,
+        activation=head_config.activation,
+    ).to(device)
 
     with timer.section("train_head_s"):
         # Inference is fused into the joint loop, so inference_s stays 0 for finetune.
@@ -297,6 +303,7 @@ def finetune_candidate(
             "embedding_dim": spec.embedding_dim,
             "head_type": _head_type(head_config),
             "head_repeats": head_repeats,
+            "activation": head_config.activation,
             # Scalar grad-norm summary for the results table / CSV; the per-epoch
             # curves stay in results.jsonl (and stream live via the epoch callback).
             # ``grad_norm_mean`` averages the per-epoch step-norm means; since every

@@ -19,6 +19,7 @@ set -euo pipefail
 # --- Search parameters (forwarded to `python -m mlsys search` in every task) ---
 export DATASET=${DATASET:-wine_reviews}                # dataset name from config/datasets.yaml
 export HIDDEN=${HIDDEN:-256}                             # head hidden width; 0 = linear probe
+export ACTIVATION=${ACTIVATION:-relu}                  # MLP-head activation: relu|gelu|tanh|silu (ignored if HIDDEN=0)
 export HEAD_REPEATS=${HEAD_REPEATS:-1}                 # frozen-pass head repeats (variance)
 export EPOCHS=${EPOCHS:-30}                            # head epochs
 export BATCH_SIZE=${BATCH_SIZE:-64}                    # encode/head batch size
@@ -43,7 +44,7 @@ N=$(python -m mlsys list-models --count 2>/dev/null || true)
 [ "$N" -gt 0 ] || { echo "empty model pool" >&2; exit 1; }
 
 echo "Submitting array over $N models (0-$((N - 1)), throttle %$THROTTLE)"
-echo "  dataset=$DATASET hidden=$HIDDEN head_repeats=$HEAD_REPEATS epochs=$EPOCHS batch_size=$BATCH_SIZE"
+echo "  dataset=$DATASET hidden=$HIDDEN activation=$ACTIVATION head_repeats=$HEAD_REPEATS epochs=$EPOCHS batch_size=$BATCH_SIZE"
 echo "  finetune: epochs=$FINETUNE_EPOCHS warmup_epochs=$WARMUP_EPOCHS lr=$FINETUNE_LR batch_size=$FINETUNE_BATCH_SIZE grad_clipping=$GRAD_CLIPPING"
 ARRAY_ID=$(sbatch --parsable --array=0-$((N - 1))%"$THROTTLE" --export=ALL \
   slurm/array_search.slurm)

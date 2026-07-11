@@ -40,7 +40,7 @@ tests/                # CPU-only smoke + unit tests
 
 ## CLI
 
-- `python -m mlsys search` — run a search. Flags: `--dataset NAME`, `--models name1,name2` (optional, default all), `--strategy {frozen,finetune,full_eval}` (default `frozen`), `--output-dir PATH` (default `runs/<unix-ts>`), `--epochs INT`, `--batch-size INT`, `--hidden WIDTH`, `--device cpu|cuda`, `--head-repeats N`, `--finetune-epochs INT`, `--finetune-lr FLOAT`, `--finetune-batch-size INT`, `--wandb`, `--cache-embeddings` (stubbed for v2).
+- `python -m mlsys search` — run a search. Flags: `--dataset NAME`, `--models name1,name2` (optional, default all), `--strategy {frozen,finetune,full_eval}` (default `frozen`), `--output-dir PATH` (default `runs/<unix-ts>`), `--epochs INT`, `--batch-size INT`, `--hidden WIDTH`, `--activation {relu,gelu,tanh,silu}`, `--device cpu|cuda`, `--head-repeats N`, `--finetune-epochs INT`, `--finetune-lr FLOAT`, `--finetune-batch-size INT`, `--wandb`, `--cache-embeddings` (stubbed for v2).
 - `python -m mlsys consolidate RUN_DIR` — merge a SLURM job array's `*_task_*/results.jsonl` fragments into one `full_eval`-shaped run (recomputes `regret.json`, exports analysis-ready CSVs). Flags: `--hidden WIDTH` (head token for the exported run name), `--cleanup`, `--allow-partial`, `--wandb`.
 - `python -m mlsys list-models` — dumps `config/models.yaml` entries. `--count` prints the pool size (the SLURM `--array` bound source of truth); `--index N` prints the bare model name at registry position `N`.
 - `python -m mlsys list-datasets` — dumps `config/datasets.yaml` entries.
@@ -57,13 +57,16 @@ python -m mlsys search --dataset wine_reviews --strategy finetune       # ground
 python -m mlsys search --dataset wine_reviews --strategy full_eval      # both + regret.json
 ```
 
-### Head type (`--hidden`)
+### Head type (`--hidden`, `--activation`)
 
-The head attached to each frozen backbone is a linear probe by default (`in_dim -> 1`). Pass `--hidden WIDTH` to use a 2-layer MLP instead: `in_dim -> WIDTH -> ReLU -> 1`. `WIDTH` is the size of the hidden layer — the only thing the number controls — so larger values give the head more capacity (and more parameters) to fit nonlinear structure. `--hidden 0` (or omitting the flag) keeps the linear head.
+The head attached to each frozen backbone is a linear probe by default (`in_dim -> 1`). Pass `--hidden WIDTH` to use a 2-layer MLP instead: `in_dim -> WIDTH -> ACT -> 1`. `WIDTH` is the size of the hidden layer — the only thing the number controls — so larger values give the head more capacity (and more parameters) to fit nonlinear structure. `--hidden 0` (or omitting the flag) keeps the linear head.
+
+`ACT` is `--activation {relu,gelu,tanh,silu}` (default `relu`); it only exists on the MLP path, so the linear probe ignores it. See [docs/head-activation.md](docs/head-activation.md).
 
 ```bash
-python -m mlsys search --dataset wine_reviews --hidden 256   # MLP head, 256-wide hidden layer
-python -m mlsys search --dataset wine_reviews                # linear head (default)
+python -m mlsys search --dataset wine_reviews --hidden 256                    # MLP head, 256-wide hidden layer
+python -m mlsys search --dataset wine_reviews --hidden 256 --activation gelu  # ... with a GELU nonlinearity
+python -m mlsys search --dataset wine_reviews                                 # linear head (default)
 ```
 
 ### W&B logging (`--wandb`)

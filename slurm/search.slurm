@@ -100,6 +100,7 @@ srun --container-name=$CONTAINER_NAME \
        --epochs 30 \
        --batch-size 64 \
        --hidden 256 \
+       --activation relu \
        --device cuda \
        --head-repeats $HEAD_REPEATS \
        --output-dir /workspace/runs/$SLURM_JOB_ID \

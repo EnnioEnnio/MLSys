@@ -11,7 +11,7 @@ from pathlib import Path
 from mlsys.datasets import load_dataset
 from mlsys.datasets.registry import load_specs as load_dataset_specs
 from mlsys.finetune import FinetuneConfig
-from mlsys.head import HeadTrainConfig
+from mlsys.head import ACTIVATIONS, HeadTrainConfig
 from mlsys.models.registry import load_specs as load_model_specs
 from mlsys.search.full_eval import STRATEGIES, run_strategy
 
@@ -88,9 +88,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "hidden-layer width of the head. Omit or 0 -> linear probe "
             "(in_dim -> 1). A positive value builds a 2-layer MLP "
-            "(in_dim -> WIDTH -> ReLU -> 1); WIDTH is the size of that "
+            "(in_dim -> WIDTH -> ACT -> 1); WIDTH is the size of that "
             "intermediate layer (more units = more capacity)."
         ),
+    )
+    search.add_argument(
+        "--activation",
+        default=HeadTrainConfig.activation,
+        choices=sorted(ACTIVATIONS),
+        help="activation between the two layers of the MLP head "
+        "(ignored for the linear probe, i.e. --hidden 0/omitted; default: %(default)s)",
     )
     search.add_argument("--device", default=None, help="cpu|cuda; default auto-detect")
     search.add_argument(
@@ -398,7 +405,12 @@ def _run_search(args: argparse.Namespace) -> int:
 
     dataset = load_dataset(args.dataset)
     model_names = [m.strip() for m in args.models.split(",")] if args.models else None
-    head_cfg = HeadTrainConfig(epochs=args.epochs, batch_size=args.batch_size, hidden=args.hidden)
+    head_cfg = HeadTrainConfig(
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        hidden=args.hidden,
+        activation=args.activation,
+    )
     finetune_cfg = FinetuneConfig(
         epochs=args.finetune_epochs,
         batch_size=args.finetune_batch_size,
@@ -426,6 +438,7 @@ def _run_search(args: argparse.Namespace) -> int:
                 "batch_size": args.batch_size,
                 "device": device,
                 "hidden": head_cfg.hidden,
+                "activation": head_cfg.activation,
                 "finetune_epochs": finetune_cfg.epochs,
                 "finetune_batch_size": finetune_cfg.batch_size,
                 "finetune_backbone_lr": finetune_cfg.backbone_lr,

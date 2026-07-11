@@ -45,6 +45,10 @@ class FinetuneConfig:
     # The warmup phase is head-only on the frozen backbone and is never clipped.
     grad_clipping: float = 0.0
 
+    def __post_init__(self) -> None:
+        if self.grad_clipping < 0:
+            raise ValueError(f"grad_clipping must be >= 0 (0 = off), got {self.grad_clipping}")
+
 
 def _snapshot(params: list[torch.nn.Parameter]) -> list[torch.Tensor]:
     return [p.detach().clone() for p in params]

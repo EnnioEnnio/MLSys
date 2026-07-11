@@ -184,6 +184,13 @@ def test_grad_norms_measured_even_without_clipping() -> None:
     )
 
 
+def test_negative_grad_clipping_rejected() -> None:
+    # load-loud: a negative threshold is nonsensical and must fail rather than silently
+    # degrade to measure-only (the >0 gate would otherwise treat it as inf).
+    with pytest.raises(ValueError, match="grad_clipping"):
+        FinetuneConfig(grad_clipping=-1.0)
+
+
 @pytest.mark.parametrize("grad_clipping,expected_max_norm", [(0.5, 0.5), (0.0, float("inf"))])
 def test_grad_clipping_forwards_max_norm(grad_clipping, expected_max_norm, monkeypatch) -> None:
     # The configured threshold reaches clip_grad_norm_ verbatim; 0 degrades to inf
@@ -289,7 +296,7 @@ def test_finetune_candidate_reports_grad_stats(trainable_loader) -> None:
     )
     assert record.extras["grad_clipping"] == 1.0
     assert record.extras["grad_norm_mean"] > 0
-    assert record.extras["grad_norm_max"] >= record.extras["grad_norm_mean"]
+    assert record.extras["grad_norm_max_overall"] >= record.extras["grad_norm_mean"]
     assert record.grad_norm_curve and record.grad_norm_max_curve
     assert record.to_dict()["grad_norm_curve"] == record.grad_norm_curve
 

@@ -244,7 +244,7 @@ def finetune_candidate(
             {
                 "grad_clipping": finetune_config.grad_clipping,
                 "grad_norm_mean": None,
-                "grad_norm_max": None,
+                "grad_norm_max_overall": None,
             }
         )
         return record
@@ -299,13 +299,17 @@ def finetune_candidate(
             "head_repeats": head_repeats,
             # Scalar grad-norm summary for the results table / CSV; the per-epoch
             # curves stay in results.jsonl (and stream live via the epoch callback).
+            # ``grad_norm_mean`` averages the per-epoch step-norm means; since every
+            # epoch runs the same number of steps this equals the mean over all steps.
+            # ``grad_norm_max_overall`` is the max across every epoch (vs. the live
+            # per-epoch ``grad_norm_max`` streamed to W&B).
             "grad_clipping": finetune_config.grad_clipping,
             "grad_norm_mean": (
                 sum(result.grad_norm_curve) / len(result.grad_norm_curve)
                 if result.grad_norm_curve
                 else None
             ),
-            "grad_norm_max": (
+            "grad_norm_max_overall": (
                 max(result.grad_norm_max_curve) if result.grad_norm_max_curve else None
             ),
         },

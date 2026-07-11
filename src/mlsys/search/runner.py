@@ -33,6 +33,9 @@ class RunRecord:
     epochs_run: int
     strategy: str = "frozen"
     extras: dict[str, Any] = field(default_factory=dict)
+    # Per-epoch pre-clip grad-norm curves (mean/max of step norms); finetune rows only.
+    grad_norm_curve: list[float] = field(default_factory=list)
+    grad_norm_max_curve: list[float] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -45,6 +48,9 @@ class RunRecord:
             "head_val_curve": self.head_val_curve,
             "epochs_run": self.epochs_run,
         }
+        if self.grad_norm_curve:
+            out["grad_norm_curve"] = self.grad_norm_curve
+            out["grad_norm_max_curve"] = self.grad_norm_max_curve
         out.update(self.extras)
         return out
 
@@ -232,6 +238,15 @@ def finetune_candidate(
         )
         record.strategy = "finetune"
         record.extras["finetune_skipped"] = True
+        # Keep the grad-stat columns present on every finetune row so the pass's
+        # W&B table / CSV schema doesn't depend on which model comes first.
+        record.extras.update(
+            {
+                "grad_clipping": finetune_config.grad_clipping,
+                "grad_norm_mean": None,
+                "grad_norm_max_overall": None,
+            }
+        )
         return record
 
     # Past the guard, the backbone is fine-tunable; narrow the type for the trainer.
@@ -276,9 +291,26 @@ def finetune_candidate(
         head_val_curve=result.val_curve,
         epochs_run=result.epochs_run,
         strategy="finetune",
+        grad_norm_curve=result.grad_norm_curve,
+        grad_norm_max_curve=result.grad_norm_max_curve,
         extras={
             "embedding_dim": spec.embedding_dim,
             "head_type": _head_type(head_config),
             "head_repeats": head_repeats,
+            # Scalar grad-norm summary for the results table / CSV; the per-epoch
+            # curves stay in results.jsonl (and stream live via the epoch callback).
+            # ``grad_norm_mean`` averages the per-epoch step-norm means; since every
+            # epoch runs the same number of steps this equals the mean over all steps.
+            # ``grad_norm_max_overall`` is the max across every epoch (vs. the live
+            # per-epoch ``grad_norm_max`` streamed to W&B).
+            "grad_clipping": finetune_config.grad_clipping,
+            "grad_norm_mean": (
+                sum(result.grad_norm_curve) / len(result.grad_norm_curve)
+                if result.grad_norm_curve
+                else None
+            ),
+            "grad_norm_max_overall": (
+                max(result.grad_norm_max_curve) if result.grad_norm_max_curve else None
+            ),
         },
     )

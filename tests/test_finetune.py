@@ -158,6 +158,89 @@ def test_warmup_trains_head_but_not_backbone() -> None:
     ), "head params did not change during warmup"
 
 
+def test_grad_norms_measured_even_without_clipping() -> None:
+    # grad_clipping=0 disables rescaling but still measures the pre-clip norm each
+    # step, so the per-epoch curves are populated for threshold tuning.
+    torch.manual_seed(0)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+    backbone = _TrainableFakeBackbone(spec, "cpu")
+    head = FCHead(in_dim=8, hidden=None)
+
+    result = train_full_model(
+        cast(TrainableBackbone, backbone),
+        head,
+        _rows(_FakeDataset()),
+        HeadTrainConfig(),
+        FinetuneConfig(epochs=3, batch_size=4, grad_clipping=0.0),
+        "cpu",
+    )
+
+    assert len(result.grad_norm_curve) == len(result.train_curve)
+    assert len(result.grad_norm_max_curve) == len(result.train_curve)
+    assert all(n > 0 for n in result.grad_norm_curve)
+    assert all(
+        mx >= mean
+        for mean, mx in zip(result.grad_norm_curve, result.grad_norm_max_curve, strict=True)
+    )
+
+
+def test_negative_grad_clipping_rejected() -> None:
+    # load-loud: a negative threshold is nonsensical and must fail rather than silently
+    # degrade to measure-only (the >0 gate would otherwise treat it as inf).
+    with pytest.raises(ValueError, match="grad_clipping"):
+        FinetuneConfig(grad_clipping=-1.0)
+
+
+@pytest.mark.parametrize("grad_clipping,expected_max_norm", [(0.5, 0.5), (0.0, float("inf"))])
+def test_grad_clipping_forwards_max_norm(grad_clipping, expected_max_norm, monkeypatch) -> None:
+    # The configured threshold reaches clip_grad_norm_ verbatim; 0 degrades to inf
+    # (measure-only, no rescaling).
+    torch.manual_seed(0)
+    seen: list[float] = []
+    real = torch.nn.utils.clip_grad_norm_
+
+    def spy(params, max_norm, *args, **kwargs):
+        seen.append(float(max_norm))
+        return real(params, max_norm, *args, **kwargs)
+
+    monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", spy)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+
+    train_full_model(
+        cast(TrainableBackbone, _TrainableFakeBackbone(spec, "cpu")),
+        FCHead(in_dim=8, hidden=None),
+        _rows(_FakeDataset()),
+        HeadTrainConfig(),
+        FinetuneConfig(epochs=1, batch_size=4, grad_clipping=grad_clipping),
+        "cpu",
+    )
+
+    assert seen and set(seen) == {expected_max_norm}
+
+
+def test_epoch_callback_receives_grad_norms() -> None:
+    # The joint loop attaches per-epoch grad norms as callback extras (streamed to W&B).
+    torch.manual_seed(0)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+    seen: list[dict[str, float]] = []
+
+    def cb(epoch: int, train_mse: float, val_mse: float, **extras: float) -> None:
+        seen.append(extras)
+
+    train_full_model(
+        cast(TrainableBackbone, _TrainableFakeBackbone(spec, "cpu")),
+        FCHead(in_dim=8, hidden=None),
+        _rows(_FakeDataset()),
+        HeadTrainConfig(),
+        FinetuneConfig(epochs=2, batch_size=4),
+        "cpu",
+        epoch_callback=cb,
+    )
+
+    assert seen
+    assert all(e["grad_norm"] > 0 and e["grad_norm_max"] >= e["grad_norm"] for e in seen)
+
+
 @pytest.fixture
 def trainable_loader():
     register_adapter("trainable_fake", lambda spec, device: _TrainableFakeBackbone(spec, device))
@@ -201,6 +284,23 @@ def test_finetune_candidate_with_warmup_keeps_timing_contract(trainable_loader) 
     assert record.timing["train_head_s"] > 0.0
 
 
+def test_finetune_candidate_reports_grad_stats(trainable_loader) -> None:
+    # Scalar grad-norm summaries land in extras (results table / CSV); the per-epoch
+    # curves land on the record itself (results.jsonl).
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="trainable_fake", embedding_dim=8)
+    record = finetune_candidate(
+        cast(LoadedDataset, _FakeDataset()),
+        spec,
+        device="cpu",
+        finetune_config=FinetuneConfig(epochs=2, batch_size=4, grad_clipping=1.0),
+    )
+    assert record.extras["grad_clipping"] == 1.0
+    assert record.extras["grad_norm_mean"] > 0
+    assert record.extras["grad_norm_max_overall"] >= record.extras["grad_norm_mean"]
+    assert record.grad_norm_curve and record.grad_norm_max_curve
+    assert record.to_dict()["grad_norm_curve"] == record.grad_norm_curve
+
+
 def test_finetune_candidate_falls_back_for_static(static_loader) -> None:
     spec = ModelSpec(name="static", hf_repo="local/fake", loader="static_fake", embedding_dim=8)
     record = finetune_candidate(
@@ -212,3 +312,6 @@ def test_finetune_candidate_falls_back_for_static(static_loader) -> None:
     assert record.strategy == "finetune"
     assert record.extras.get("finetune_skipped") is True
     assert isinstance(record.metrics, RegressionMetrics)
+    # Grad-stat columns stay schema-stable across skipped and trained finetune rows.
+    assert record.extras["grad_norm_mean"] is None
+    assert record.extras["grad_clipping"] == FinetuneConfig().grad_clipping

@@ -30,9 +30,20 @@ log = logging.getLogger(__name__)
 
 _TASK_DIR_RE = re.compile(r"_task_(\d+)$")
 
-# Row keys consumed positionally by flatten_row; everything else passes through as extras.
+# Row keys consumed positionally by flatten_row (or dropped: the per-epoch curves);
+# everything else passes through as extras.
 _CORE_KEYS = frozenset(
-    {"model", "dataset", "strategy", "metrics", "timing", "head_train_curve", "head_val_curve"}
+    {
+        "model",
+        "dataset",
+        "strategy",
+        "metrics",
+        "timing",
+        "head_train_curve",
+        "head_val_curve",
+        "grad_norm_curve",
+        "grad_norm_max_curve",
+    }
 )
 
 

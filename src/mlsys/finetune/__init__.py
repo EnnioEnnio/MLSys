@@ -16,7 +16,14 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from mlsys.head import EpochCallback, FCHead, HeadTrainConfig, HeadTrainResult, train_head
+from mlsys.head import (
+    EpochCallback,
+    FCHead,
+    HeadTrainConfig,
+    HeadTrainResult,
+    target_stats,
+    train_head,
+)
 
 if TYPE_CHECKING:
     import torch
@@ -74,6 +81,10 @@ def train_full_model(
     """Train ``backbone`` + ``head`` jointly with AdamW (two LR groups) + MSE, early-stopping
     on val MSE. The backbone is mutated in place and left in its best-val state; the trained
     head comes back inside the returned result.
+
+    Targets are z-scored on train-split stats, so the head predicts standardized values and
+    the returned curves / ``best_val_mse`` are in standardized units; invert predictions with
+    the result's ``target_mean``/``target_std`` before computing metrics.
     """
     import torch
     from torch import nn
@@ -90,6 +101,15 @@ def train_full_model(
     y_train = torch.tensor([r.target for r in train_rows], dtype=torch.float32, device=device)
     val_texts = [r.text for r in val_rows]
     y_val = torch.tensor([r.target for r in val_rows], dtype=torch.float32, device=device)
+
+    # Z-score targets on train-split stats (issue #32): both the LP-FT warmup and the
+    # joint loop train in standardized space, so the initial MSE is O(1) instead of
+    # O(10^3) for wine-style targets — raw-scale losses drove violent first backward
+    # passes into the backbone (part of the exp_wine_16 divergences). The head thus
+    # predicts standardized values; callers invert via the returned target_mean/std.
+    target_mean, target_std = target_stats(y_train)
+    y_train = (y_train - target_mean) / target_std
+    y_val = (y_val - target_mean) / target_std
 
     # LP-FT warmup: fit the head on the frozen backbone first, so the joint loop starts
     # from a sane head instead of backprop'ing random-head gradients into the backbone
@@ -195,4 +215,6 @@ def train_full_model(
         epochs_run=epochs_run,
         grad_norm_curve=grad_norm_curve,
         grad_norm_max_curve=grad_norm_max_curve,
+        target_mean=target_mean,
+        target_std=target_std,
     )

@@ -11,7 +11,7 @@ import torch
 
 from mlsys.datasets.registry import REQUIRED_SPLITS
 from mlsys.finetune import FinetuneConfig, train_full_model
-from mlsys.head import EpochCallback, FCHead, HeadTrainConfig, train_head
+from mlsys.head import EpochCallback, FCHead, HeadTrainConfig, target_stats, train_head
 from mlsys.models.backbone import TrainableBackbone
 from mlsys.models.registry import ModelSpec, build_backbone
 from mlsys.search.metrics import RegressionMetrics, regression_metrics
@@ -152,9 +152,22 @@ def score_candidate(
         x_test, y_test = _embed_split(backbone, rows["test"], batch_size, device)
 
     with timer.section("train_head_s"):
+        # Z-score targets on train-split stats (issue #32): heads train against a
+        # zero-mean/unit-variance target; predictions are mapped back before metrics
+        # so mse/mae stay in original units (r2/spearman are affine-invariant).
+        # Train/val curves in results.jsonl are therefore in standardized units.
+        target_mean, target_std = target_stats(y_train)
+        y_train_z = (y_train - target_mean) / target_std
+        y_val_z = (y_val - target_mean) / target_std
         head_results = [
             train_head(
-                x_train, y_train, x_val, y_val, head_config, seeds[i], epoch_callback=epoch_callback
+                x_train,
+                y_train_z,
+                x_val,
+                y_val_z,
+                head_config,
+                seeds[i],
+                epoch_callback=epoch_callback,
             )
             for i in range(head_repeats)
         ]
@@ -165,6 +178,7 @@ def score_candidate(
                 [r.head(x_test).detach().cpu().numpy() for r in head_results],
                 axis=0,
             )
+        all_preds = all_preds * target_std + target_mean
         metrics = regression_metrics(y_test.detach().cpu().numpy(), all_preds)
 
     timer.record_peak_gpu_mb()
@@ -182,6 +196,8 @@ def score_candidate(
             # Mirror FCHead's own linear/mlp decision (hidden None *or* <= 0 -> linear).
             "head_type": ("mlp" if head_config.hidden and head_config.hidden > 0 else "linear"),
             "head_repeats": head_repeats,
+            "target_mean": target_mean,
+            "target_std": target_std,
         },
     )
 
@@ -276,7 +292,10 @@ def finetune_candidate(
                 .numpy()
                 for s in range(0, len(test_rows), bs)
             ]
+        # The joint loop trained in z-space (issue #32); map predictions back to
+        # original units before metrics.
         all_preds = np.concatenate(preds) if preds else np.zeros((0,))
+        all_preds = all_preds * result.target_std + result.target_mean
         y_test = np.array([r.target for r in test_rows], dtype=np.float64)
         metrics = regression_metrics(y_test, all_preds)
 
@@ -297,6 +316,8 @@ def finetune_candidate(
             "embedding_dim": spec.embedding_dim,
             "head_type": _head_type(head_config),
             "head_repeats": head_repeats,
+            "target_mean": result.target_mean,
+            "target_std": result.target_std,
             # Scalar grad-norm summary for the results table / CSV; the per-epoch
             # curves stay in results.jsonl (and stream live via the epoch callback).
             # ``grad_norm_mean`` averages the per-epoch step-norm means; since every

@@ -301,6 +301,50 @@ def test_finetune_candidate_reports_grad_stats(trainable_loader) -> None:
     assert record.to_dict()["grad_norm_curve"] == record.grad_norm_curve
 
 
+def test_train_full_model_returns_target_stats() -> None:
+    # The joint loop z-scores targets on train stats (issue #32) and hands the stats
+    # back so callers can map predictions to original units.
+    torch.manual_seed(0)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+
+    result = train_full_model(
+        cast(TrainableBackbone, _TrainableFakeBackbone(spec, "cpu")),
+        FCHead(in_dim=8, hidden=None),
+        _rows(_FakeDataset()),
+        HeadTrainConfig(),
+        FinetuneConfig(epochs=1, batch_size=4),
+        "cpu",
+    )
+
+    y = torch.tensor([float(i % 5) for i in range(20)])
+    assert result.target_mean == pytest.approx(float(y.mean()))
+    assert result.target_std == pytest.approx(float(y.std()))
+
+
+def test_finetune_candidate_unscales_predictions(trainable_loader) -> None:
+    # Wine-style targets (~85-89): the joint loop trains in z-space, so a missing
+    # inversion would leave predictions near 0 and mse at ~87^2 ≈ 7.5e3; in original
+    # units even a mean-predicting head stays within the target variance.
+    torch.manual_seed(0)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="trainable_fake", embedding_dim=8)
+    ds = _FakeDataset()
+    ds.splits = {
+        name: _FakeSplit([Row(text=r.text, target=85.0 + r.target) for r in split])
+        for name, split in ds.splits.items()
+    }
+
+    record = finetune_candidate(
+        cast(LoadedDataset, ds),
+        spec,
+        device="cpu",
+        finetune_config=FinetuneConfig(epochs=2, batch_size=4),
+    )
+
+    assert record.metrics.mse < 100.0
+    assert record.extras["target_mean"] == pytest.approx(87.0, abs=0.5)
+    assert record.extras["target_std"] > 0.0
+
+
 def test_finetune_candidate_falls_back_for_static(static_loader) -> None:
     spec = ModelSpec(name="static", hf_repo="local/fake", loader="static_fake", embedding_dim=8)
     record = finetune_candidate(
@@ -312,6 +356,8 @@ def test_finetune_candidate_falls_back_for_static(static_loader) -> None:
     assert record.strategy == "finetune"
     assert record.extras.get("finetune_skipped") is True
     assert isinstance(record.metrics, RegressionMetrics)
-    # Grad-stat columns stay schema-stable across skipped and trained finetune rows.
+    # Grad-stat / target-stat columns stay schema-stable across skipped and trained
+    # finetune rows (the frozen fallback records its own z-scoring stats).
     assert record.extras["grad_norm_mean"] is None
     assert record.extras["grad_clipping"] == FinetuneConfig().grad_clipping
+    assert record.extras["target_std"] > 0.0

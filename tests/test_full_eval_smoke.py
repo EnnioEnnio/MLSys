@@ -21,6 +21,7 @@ from mlsys.datasets.registry import DatasetSpec  # noqa: E402
 from mlsys.head import HeadTrainConfig  # noqa: E402
 from mlsys.models.registry import _ADAPTERS, ModelSpec, register_adapter  # noqa: E402
 from mlsys.search.full_eval import run_frozen  # noqa: E402
+from mlsys.search.runner import score_candidate  # noqa: E402
 
 
 class _FakeBackbone:
@@ -137,3 +138,28 @@ def test_full_eval_writes_one_row_per_model(
     ):
         assert key in row["timing"]
     assert row["epochs_run"] >= 1
+
+
+def test_score_candidate_maps_predictions_back_to_original_units(fake_loader_registered) -> None:
+    # Wine-style targets (~85-89): the head trains against z-scored targets, so a
+    # missing inversion would leave predictions near 0 and mse at ~87^2 ≈ 7.5e3; in
+    # original units even a mean-predicting head stays within the target variance.
+    spec = ModelSpec(name="fake-model", hf_repo="local/fake", loader="fake_loader", embedding_dim=8)
+    dataset = _FakeDataset(name="synthetic")
+    dataset.splits = {
+        name: _FakeSplit([Row(text=r.text, target=85.0 + r.target % 5) for r in split])
+        for name, split in dataset.splits.items()
+    }
+
+    record = score_candidate(
+        cast(LoadedDataset, dataset),
+        spec,
+        device="cpu",
+        batch_size=4,
+        head_config=HeadTrainConfig(epochs=3, batch_size=4, lr=1e-2),
+        head_repeats=1,
+    )
+
+    assert record.metrics.mse < 100.0
+    assert record.extras["target_mean"] == pytest.approx(87.0, abs=0.5)
+    assert record.extras["target_std"] > 0.0

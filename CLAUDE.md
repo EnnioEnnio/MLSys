@@ -41,8 +41,14 @@ uv run pytest -m integration                                       # real-model 
 
 ## Analysis (report generation)
 
-`mlsys.analysis` turns a `full_eval` run's CSV dumps into tables + plots + a single
-`SUMMARY.md` to hand to Claude for the report *prose*. Viz deps (`pandas`, `matplotlib`,
+`mlsys.analysis` pairs a **proxy** pass (the cheap ranking signal) against a **reference**
+pass per run-id and turns their CSV dumps into tables + plots + a single `SUMMARY.md` to hand
+to Claude for the report *prose*. The canonical pair is `frozen` (proxy) vs `finetune`
+(reference / ground truth) — the only pairing that also yields **regret** and **divergence** —
+but the loader accepts any registered proxy/reference pairing (`analysis/loader.py:_ROLE_PAIRS`);
+e.g. `r1` vs `r3` compares a 1-seed vs 3-seed frozen head fit (same strategy, so a variance
+check with no regret). A run-id needs *both* halves of a recognised pair to be analysable — a
+lone-pass run (e.g. finetune-only) is skipped. Viz deps (`pandas`, `matplotlib`,
 `seaborn`) live in the optional **`analysis`** dependency group — kept out of
 `[project.dependencies]` so the cluster's `pip install -e .` stays light, but in the default
 uv dev groups so `ty`/CI resolve the lazy imports. Install with `uv sync --group analysis`;
@@ -54,9 +60,10 @@ mlsys regret --frozen F.csv --finetune T.csv [--out R.csv]   # standalone regret
 ```
 
 Each **experiment** is a folder of CSVs (`results/<experiment>/`, e.g. `exp_wine_16`), one
-`full_eval` head config per run-id named `<runid>_<dataset>_<strategy>_<num>_model_<HEAD>_<kind>.csv`
-(`<kind>` ∈ frozen/finetune/regret; head label and width come from the filename, **not** the
-`head_type` column). The stem up to `_<kind>` is exactly the W&B run name from
+head config per run-id named `<runid>_<dataset>_<strategy>_<num>_model_<HEAD>_<kind>.csv`
+(`<kind>` ∈ frozen/finetune/regret/r1/r3; a run-id is analysable once its files include a
+recognised proxy+reference pair — frozen+finetune, or r1+r3. Head label and width come from the
+filename, **not** the `head_type` column). The stem up to `_<kind>` is exactly the W&B run name from
 `cli/main.py:_wandb_run_name` (strategy underscore-stripped, `full_eval`→`fulleval`; linear
 head is bare `FCH`, MLP is `MLP_<width>`) — download the CSV from W&B, append `_<kind>`, drop
 it in. `<dataset>` may contain underscores (`wine_reviews`); the loader anchors on the literal
@@ -79,6 +86,12 @@ fields**: inference is *fused into the joint loop*, so `inference_s = 0` and the
 training cost lands in `train_head_s`. Non-trainable backbones (`can_finetune=False`,
 e.g. model2vec) fall back to the frozen `score_candidate` and are tagged
 `finetune_skipped=true` (finetune score == frozen score).
+
+Both paths **z-score targets** on train-split stats (`head.target_stats`, issue #32):
+heads train in standardized space (train/val curves in `results.jsonl` are standardized
+MSE) and predictions are mapped back before `RegressionMetrics`, so mse/mae stay in
+original units (r2/spearman are affine-invariant). Per-row `target_mean`/`target_std`
+land in extras.
 
 Each substep is wrapped in `timing.py:Timer.section`. **Don't rename the timing
 fields** (`prepare_model_s`, `prepare_data_s`, `inference_s`, `train_head_s`,

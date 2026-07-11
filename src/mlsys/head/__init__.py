@@ -61,6 +61,26 @@ class HeadTrainResult:
     # head trainer, which doesn't clip.
     grad_norm_curve: list[float] = field(default_factory=list)
     grad_norm_max_curve: list[float] = field(default_factory=list)
+    # Train-target z-scoring stats (issue #32) when the trainer standardized targets
+    # itself (the finetune joint loop); callers must map predictions back with
+    # ``pred * target_std + target_mean`` before computing metrics. The identity
+    # (0, 1) means the trainer saw targets as given — ``train_head`` never
+    # standardizes; in the frozen path the caller does it around the call.
+    target_mean: float = 0.0
+    target_std: float = 1.0
+
+
+def target_stats(y_train: torch.Tensor) -> tuple[float, float]:
+    """Mean/std of the train-split targets for z-scoring (issue #32).
+
+    Std falls back to 1.0 for (near-)constant targets and single-row splits — the
+    transform degrades to a plain mean-shift instead of dividing by ~0.
+    """
+    mean = float(y_train.mean())
+    std = float(y_train.std()) if y_train.numel() > 1 else 0.0
+    if std <= 1e-8:
+        std = 1.0
+    return mean, std
 
 
 def _iter_minibatches(

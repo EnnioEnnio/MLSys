@@ -4,7 +4,7 @@
 #SBATCH --mail-user=slack:<YOUR_USERNAME>
 #SBATCH --partition=gpu-batch
 #SBATCH -C ARCH:X86
-#SBATCH --time=4:00:00
+#SBATCH --time=24:00:00
 #SBATCH --gpus=a100:1
 #SBATCH --mem=64G
 #SBATCH --job-name=mlsys-verify-divergence-fix
@@ -12,11 +12,16 @@
 
 # Re-runs `finetune` on exactly the (model, head-width) combos that diverged (negative
 # r2) in exp_wine_16, to confirm the LR warmup+decay schedule (train_full_model) clears
-# the divergence map. See the issue's Findings section for the source of this list:
-#   deberta-v3-small/base — all 4 head widths (FCH, MLP_128, MLP_256, MLP_512)
-#   electra-base-discriminator — MLP_256, MLP_512
-#   roberta-base — MLP_128
-#   all-mpnet-base-v2 — FCH
+# the divergence map. See the issue's Findings section for the source of this list.
+#
+# Job 2327067 already covered (results in runs/2327067/hidden_{0,128}/results.jsonl):
+#   hidden=0:   deberta-v3-small (r2=0.4381 fixed), deberta-v3-base (r2=-0.3155 STILL
+#               DIVERGED), all-mpnet-base-v2 (r2=0.8697 fixed)
+#   hidden=128: deberta-v3-small (r2=0.6407 fixed), deberta-v3-base (r2=0.2192 fixed)
+# This script only re-runs what job 2327067 never got to before hitting its time limit:
+#   hidden=128: roberta-base (started but was cut off mid-run)
+#   hidden=256: deberta-v3-small, deberta-v3-base, electra-base-discriminator
+#   hidden=512: deberta-v3-small, deberta-v3-base, electra-base-discriminator
 #
 # Uses --strategy finetune only (no frozen pass, no regret.json) since we only care
 # about whether the joint loop still diverges, not proxy ranking.
@@ -50,11 +55,10 @@ pip install --no-cache-dir -e /workspace
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# One (hidden width -> model subset) pair per diverged group above.
-WIDTHS=(0 128 256 512)
+# Only the (hidden width -> model subset) pairs job 2327067 didn't finish.
+WIDTHS=(128 256 512)
 MODELS_FOR_WIDTH=(
-  "deberta-v3-small,deberta-v3-base,all-mpnet-base-v2"
-  "deberta-v3-small,deberta-v3-base,roberta-base"
+  "roberta-base"
   "deberta-v3-small,deberta-v3-base,electra-base-discriminator"
   "deberta-v3-small,deberta-v3-base,electra-base-discriminator"
 )

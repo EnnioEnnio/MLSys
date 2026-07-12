@@ -29,7 +29,7 @@
 
 set -euo pipefail
 
-REPO_PATH=/sc/projects/<GROUP>/<Project>/<*Path>
+REPO_PATH=/sc/projects/sci-rabl/mlsys2026/jitr/MLSys
 
 echo "Starting divergence-fix verification job"
 echo "Job ID: $SLURM_JOB_ID"

@@ -39,6 +39,7 @@ export NVIDIA_VISIBLE_DEVICES=void
 echo "Consolidating runs/$ARRAY_JOB_ID"
 echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURMD_NODENAME"
+echo "code at: $(git -C $REPO_PATH log -1 --oneline) ($(git -C $REPO_PATH branch --show-current))"
 
 # Step 1: Set up container with dependencies — same shared container + per-node
 # flock as array_search.slurm (see there for the race/trade-off rationale).

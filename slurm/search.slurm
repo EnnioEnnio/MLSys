@@ -37,6 +37,7 @@ echo "Starting mlsys search job"
 echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURMD_NODENAME"
 echo "GPU: $CUDA_VISIBLE_DEVICES"
+echo "code at: $(git -C $REPO_PATH log -1 --oneline) ($(git -C $REPO_PATH branch --show-current))"
 nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader
 
 # Step 1: Set up container with dependencies (reuses container across jobs)

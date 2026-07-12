@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -A {account_name}
+#SBATCH -A sci-rabl-mlsys2026
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=slack:<YOUR_USERNAME>
 #SBATCH --partition=gpu-batch

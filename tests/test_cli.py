@@ -168,6 +168,43 @@ def test_grad_clipping_reaches_finetune_config(extra_args, expected, tmp_path, m
     assert captured["grad_clipping"] == expected
 
 
+@pytest.mark.parametrize(
+    "extra_args,expected",
+    [([], True), (["--no-standardize-targets"], False), (["--standardize-targets"], True)],
+)
+def test_standardize_targets_reaches_head_config(
+    extra_args, expected, tmp_path, monkeypatch
+) -> None:
+    # --[no-]standardize-targets threads through to run_strategy's head_config;
+    # default is on (regression recipe, issue #32).
+    import sys
+
+    cli_main = sys.modules["mlsys.cli.main"]
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(cli_main, "load_dataset", lambda name: object())
+
+    def fake_run_strategy(name, dataset, **kwargs):
+        captured["standardize_targets"] = kwargs["head_config"].standardize_targets
+        return []
+
+    monkeypatch.setattr(cli_main, "run_strategy", fake_run_strategy)
+
+    rc = main(
+        [
+            "search",
+            "--dataset",
+            "wine_reviews",
+            "--strategy",
+            "frozen",
+            "--output-dir",
+            str(tmp_path / "run"),
+            *extra_args,
+        ]
+    )
+    assert rc == 0
+    assert captured["standardize_targets"] is expected
+
+
 def _fake_consolidation_result(tmp_path, rows=(), summary=None):
     from mlsys.search.consolidate import ConsolidationResult
 

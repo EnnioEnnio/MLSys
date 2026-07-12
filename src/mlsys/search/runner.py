@@ -156,7 +156,10 @@ def score_candidate(
         # zero-mean/unit-variance target; predictions are mapped back before metrics
         # so mse/mae stay in original units (r2/spearman are affine-invariant).
         # Train/val curves in results.jsonl are therefore in standardized units.
-        target_mean, target_std = target_stats(y_train)
+        # `standardize_targets=False` keeps the identity transform (raw targets).
+        target_mean, target_std = (
+            target_stats(y_train) if head_config.standardize_targets else (0.0, 1.0)
+        )
         y_train_z = (y_train - target_mean) / target_std
         y_val_z = (y_val - target_mean) / target_std
         head_results = [

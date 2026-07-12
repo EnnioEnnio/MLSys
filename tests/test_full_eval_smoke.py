@@ -163,3 +163,21 @@ def test_score_candidate_maps_predictions_back_to_original_units(fake_loader_reg
     assert record.metrics.mse < 100.0
     assert record.extras["target_mean"] == pytest.approx(87.0, abs=0.5)
     assert record.extras["target_std"] > 0.0
+
+
+def test_score_candidate_standardization_opt_out(fake_loader_registered) -> None:
+    # standardize_targets=False (summarization pilot / pipeline reuse) keeps the
+    # identity transform: raw targets in the loss, (0, 1) stats in extras.
+    spec = ModelSpec(name="fake-model", hf_repo="local/fake", loader="fake_loader", embedding_dim=8)
+
+    record = score_candidate(
+        cast(LoadedDataset, _FakeDataset(name="synthetic")),
+        spec,
+        device="cpu",
+        batch_size=4,
+        head_config=HeadTrainConfig(epochs=3, batch_size=4, lr=1e-2, standardize_targets=False),
+        head_repeats=1,
+    )
+
+    assert record.extras["target_mean"] == 0.0
+    assert record.extras["target_std"] == 1.0

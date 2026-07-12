@@ -114,6 +114,8 @@ MODEL=$(python -m mlsys list-models --index "$SLURM_ARRAY_TASK_ID")
 echo "Task $SLURM_ARRAY_TASK_ID -> $MODEL"
 # results.jsonl is append-only; a retried task must not double-append its fragment.
 rm -f "$OUT/results.jsonl" "$OUT/regret.json"
+# Boolean flag: STANDARDIZE_TARGETS=1 -> --standardize-targets, else --no-standardize-targets.
+if [ "$STANDARDIZE_TARGETS" = 1 ]; then STD_FLAG=--standardize-targets; else STD_FLAG=--no-standardize-targets; fi
 python -m mlsys search \
   --dataset "$DATASET" \
   --strategy full_eval \
@@ -127,6 +129,7 @@ python -m mlsys search \
   --finetune-lr "$FINETUNE_LR" \
   --finetune-batch-size "$FINETUNE_BATCH_SIZE" \
   --grad-clipping "$GRAD_CLIPPING" \
+  "$STD_FLAG" \
   --output-dir "$OUT" \
   --wandb
 '

@@ -321,6 +321,25 @@ def test_train_full_model_returns_target_stats() -> None:
     assert result.target_std == pytest.approx(float(y.std()))
 
 
+def test_train_full_model_standardization_opt_out() -> None:
+    # standardize_targets=False (summarization pilot / pipeline reuse) keeps the
+    # identity transform: raw targets in the loss, (0, 1) stats on the result.
+    torch.manual_seed(0)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+
+    result = train_full_model(
+        cast(TrainableBackbone, _TrainableFakeBackbone(spec, "cpu")),
+        FCHead(in_dim=8, hidden=None),
+        _rows(_FakeDataset()),
+        HeadTrainConfig(standardize_targets=False),
+        FinetuneConfig(epochs=1, batch_size=4),
+        "cpu",
+    )
+
+    assert result.target_mean == 0.0
+    assert result.target_std == 1.0
+
+
 def test_finetune_candidate_unscales_predictions(trainable_loader) -> None:
     # Wine-style targets (~85-89): the joint loop trains in z-space, so a missing
     # inversion would leave predictions near 0 and mse at ~87^2 ≈ 7.5e3; in original

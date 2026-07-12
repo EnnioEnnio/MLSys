@@ -91,7 +91,9 @@ Both paths **z-score targets** on train-split stats (`head.target_stats`, issue 
 heads train in standardized space (train/val curves in `results.jsonl` are standardized
 MSE) and predictions are mapped back before `RegressionMetrics`, so mse/mae stay in
 original units (r2/spearman are affine-invariant). Per-row `target_mean`/`target_std`
-land in extras.
+land in extras. On by default (`HeadTrainConfig.standardize_targets`); turn off with
+`--no-standardize-targets` / `STANDARDIZE_TARGETS=0` when reusing the pipeline for
+tasks whose targets shouldn't be rescaled (e.g. the summarization pilot).
 
 Each substep is wrapped in `timing.py:Timer.section`. **Don't rename the timing
 fields** (`prepare_model_s`, `prepare_data_s`, `inference_s`, `train_head_s`,

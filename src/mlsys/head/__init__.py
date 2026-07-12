@@ -47,6 +47,12 @@ class HeadTrainConfig:
     early_stop_patience: int = 3
     min_delta: float = 1e-3
     hidden: int | None = None
+    # Z-score targets on train-split stats before head / joint training, unscaling
+    # predictions before metrics (issue #32). On for the regression recipe; turn off
+    # when reusing the pipeline for tasks whose targets shouldn't be rescaled
+    # (e.g. the summarization pilot). Read by the trainers' callers — ``train_head``
+    # itself always takes targets as given.
+    standardize_targets: bool = True
 
 
 @dataclass(frozen=True)

@@ -135,6 +135,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "(0 = off; the pre-clip norm is measured and logged either way, "
         "default: %(default)s)",
     )
+    search.add_argument(
+        "--standardize-targets",
+        action=argparse.BooleanOptionalAction,
+        default=HeadTrainConfig.standardize_targets,
+        help="z-score targets on train-split stats for head/joint training, unscaling "
+        "predictions before metrics (regression recipe, issue #32); pass "
+        "--no-standardize-targets when reusing the pipeline for tasks whose targets "
+        "shouldn't be rescaled (default: %(default)s)",
+    )
     search.add_argument("--wandb", action="store_true", help="opt-in W&B logging")
     search.add_argument(
         "--cache-embeddings",
@@ -398,7 +407,12 @@ def _run_search(args: argparse.Namespace) -> int:
 
     dataset = load_dataset(args.dataset)
     model_names = [m.strip() for m in args.models.split(",")] if args.models else None
-    head_cfg = HeadTrainConfig(epochs=args.epochs, batch_size=args.batch_size, hidden=args.hidden)
+    head_cfg = HeadTrainConfig(
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        hidden=args.hidden,
+        standardize_targets=args.standardize_targets,
+    )
     finetune_cfg = FinetuneConfig(
         epochs=args.finetune_epochs,
         batch_size=args.finetune_batch_size,
@@ -426,6 +440,7 @@ def _run_search(args: argparse.Namespace) -> int:
                 "batch_size": args.batch_size,
                 "device": device,
                 "hidden": head_cfg.hidden,
+                "standardize_targets": head_cfg.standardize_targets,
                 "finetune_epochs": finetune_cfg.epochs,
                 "finetune_batch_size": finetune_cfg.batch_size,
                 "finetune_backbone_lr": finetune_cfg.backbone_lr,

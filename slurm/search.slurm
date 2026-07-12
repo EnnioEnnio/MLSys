@@ -103,6 +103,7 @@ srun --container-name=$CONTAINER_NAME \
        --hidden 256 \
        --device cuda \
        --head-repeats $HEAD_REPEATS \
+       --standardize-targets \
        --output-dir /workspace/runs/$SLURM_JOB_ID \
        $FINETUNE_ARGS \
        --wandb

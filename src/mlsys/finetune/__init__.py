@@ -82,9 +82,10 @@ def train_full_model(
     on val MSE. The backbone is mutated in place and left in its best-val state; the trained
     head comes back inside the returned result.
 
-    Targets are z-scored on train-split stats, so the head predicts standardized values and
-    the returned curves / ``best_val_mse`` are in standardized units; invert predictions with
-    the result's ``target_mean``/``target_std`` before computing metrics.
+    When ``head_cfg.standardize_targets`` is on, targets are z-scored on train-split stats,
+    so the head predicts standardized values and the returned curves / ``best_val_mse`` are
+    in standardized units; invert predictions with the result's ``target_mean``/``target_std``
+    before computing metrics.
     """
     import torch
     from torch import nn
@@ -107,7 +108,8 @@ def train_full_model(
     # O(10^3) for wine-style targets — raw-scale losses drove violent first backward
     # passes into the backbone (part of the exp_wine_16 divergences). The head thus
     # predicts standardized values; callers invert via the returned target_mean/std.
-    target_mean, target_std = target_stats(y_train)
+    # `standardize_targets=False` keeps the identity transform (raw targets).
+    target_mean, target_std = target_stats(y_train) if head_cfg.standardize_targets else (0.0, 1.0)
     y_train = (y_train - target_mean) / target_std
     y_val = (y_val - target_mean) / target_std
 

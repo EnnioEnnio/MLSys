@@ -63,6 +63,9 @@
   pooling: mean
   embedding_dim: 768
   max_length: 512
+  # Diverges under the standard 2e-5 backbone LR
+  # Per-family exception per the LR warmup/decay issue's fallback plan.
+  finetune_lr: 1.0e-5
 
 - name: electra-base-discriminator
   hf_repo: google/electra-base-discriminator

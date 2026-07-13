@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -221,6 +221,11 @@ def finetune_candidate(
     )
     head_config = head_config or HeadTrainConfig()
     finetune_config = finetune_config or FinetuneConfig()
+    if "finetune_lr" in spec.extra:
+        # Per-family LR override (models.yaml `finetune_lr`): some backbones (e.g.
+        # deberta-v3-base) still diverge under the standard schedule even with
+        # warmup+decay; see the comment on that model's entry for the evidence.
+        finetune_config = replace(finetune_config, backbone_lr=float(spec.extra["finetune_lr"]))
     reset_peak_gpu_memory()
     timer = Timer(label=f"finetune:{spec.name}")
 

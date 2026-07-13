@@ -17,11 +17,16 @@
 # export analysis-ready CSVs, and push the consolidated W&B run. Submitted by
 # slurm/submit.sh with --dependency=afterok:<array_id>. Consolidation is pure
 # CPU work (stdlib json/csv merge), so it runs on the cpu-batch partition.
-# IMPORTANT: Update REPO_PATH below to match your cluster home directory path.
+# IMPORTANT: Update the REPO_PATH default below to match your cluster checkout path.
 
 set -euo pipefail
 
-REPO_PATH=/sc/projects/<GROUP>/<Project>/<*Path>
+# Same REPO_PATH/CODE_PATH split as array_search.slurm: runs/ lives in the live
+# checkout, the code comes from the snapshot submit.sh pinned (issue #49) —
+# both jobs get the same values via --export=ALL, so they can't drift apart.
+REPO_PATH=${REPO_PATH:-/sc/projects/<GROUP>/<Project>/<*Path>}
+CODE_PATH=${CODE_PATH:-$REPO_PATH}
+MOUNTS=$CODE_PATH:/workspace,$REPO_PATH/runs:/workspace/runs
 
 # The experiment dir to consolidate; submit.sh exports it. HIDDEN must match the
 # array run (submit.sh exports the same value to both jobs so the W&B head token
@@ -39,7 +44,7 @@ export NVIDIA_VISIBLE_DEVICES=void
 echo "Consolidating runs/$ARRAY_JOB_ID"
 echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURMD_NODENAME"
-echo "code at: $(git -C $REPO_PATH log -1 --oneline) ($(git -C $REPO_PATH branch --show-current))"
+echo "Code: $CODE_PATH ($(git -C "$CODE_PATH" log -1 --oneline 2>/dev/null || echo 'git unavailable'))"
 
 # Step 1: Set up container with dependencies — same shared container + per-node
 # flock as array_search.slurm (see there for the race/trade-off rationale).
@@ -49,7 +54,7 @@ flock /tmp/mlsys-container-$USER.lock \
 srun --container-image="nvcr.io#nvidia/pytorch:25.03-py3" \
      --container-name=$CONTAINER_NAME \
      --container-writable \
-     --container-mounts=$REPO_PATH:/workspace \
+     --container-mounts=$MOUNTS \
      --container-env=NVIDIA_VISIBLE_DEVICES \
      bash -c '
 set -euo pipefail
@@ -69,13 +74,24 @@ pip install --no-cache-dir -e /workspace
 # Add --cleanup to remove the *_task_* fragment dirs after a successful merge:
 #   python -m mlsys consolidate /workspace/runs/$ARRAY_JOB_ID --hidden "$HIDDEN" --wandb --cleanup
 srun --container-name=$CONTAINER_NAME \
-     --container-mounts=$REPO_PATH:/workspace \
+     --container-mounts=$MOUNTS \
      --container-env=WANDB_API_KEY,ARRAY_JOB_ID,HIDDEN,NVIDIA_VISIBLE_DEVICES \
      --container-workdir=/workspace \
      bash -c '
 set -euo pipefail
 python -m mlsys consolidate /workspace/runs/$ARRAY_JOB_ID --hidden "$HIDDEN" --wandb
 '
+
+# Snapshot cleanup: the merge succeeded (set -e) and results live in
+# $REPO_PATH/runs via the separate mount, so the pinned worktree is no longer
+# needed. Only fires for snapshot runs (submit.sh sets CODE_PATH != REPO_PATH);
+# --force because pip install -e leaves egg-info in the snapshot. If the array
+# fails this job never runs and the snapshot survives for pinned retries.
+if [ "$CODE_PATH" != "$REPO_PATH" ]; then
+  git -C "$REPO_PATH" worktree remove --force "$CODE_PATH" \
+    && echo "Removed code snapshot $CODE_PATH" \
+    || echo "WARNING: could not remove code snapshot $CODE_PATH — remove it manually"
+fi
 
 echo "Job completed!"
 echo "Output files:"

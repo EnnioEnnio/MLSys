@@ -2,9 +2,11 @@
 
 Cluster launch for `mlsys search`.
 
-**One-shot setup** (all scripts): set `REPO_PATH` to your cluster checkout, `--mail-user` to
-your slack handle, `-A {account_name}` to your SLURM account. For W&B, `export WANDB_API_KEY=...`
-in your shell rc **before** submitting — the cluster does not read `.env`.
+**One-shot setup** (all scripts): set the `REPO_PATH` default to your cluster checkout (used
+when a job is `sbatch`ed directly; `submit.sh` derives and forwards it automatically),
+`--mail-user` to your slack handle, `-A {account_name}` to your SLURM account. For W&B,
+`export WANDB_API_KEY=...` in your shell rc **before** submitting — the cluster does not
+read `.env`.
 
 ## Quickstart
 
@@ -34,6 +36,24 @@ DATASET=wine_reviews HIDDEN=512 FINETUNE_LR=1e-5 bash slurm/submit.sh
 | `THROTTLE` | `4` | max concurrent array tasks (`%N`) |
 
 The consolidate job is pure CPU work and runs on `cpu-batch`; only the array tasks occupy GPUs.
+
+## Code snapshots (branch-switch safety)
+
+SLURM tasks execute the code **when they run**, not when they are submitted, so `submit.sh`
+pins each run to an immutable snapshot: a detached `git worktree` of HEAD under
+`<repo>/.snapshots/` (created by `slurm/snapshot.sh`, forwarded to both jobs as `CODE_PATH`).
+After `submit.sh` returns you can `git switch`, pull, or edit the checkout freely — queued and
+in-flight tasks keep their pinned code, and runs submitted from different branches coexist.
+Uncommitted changes are **not** in the snapshot (it pins HEAD; the helper warns).
+
+Results are unaffected by snapshot cleanup: `runs/` always lives in the live checkout
+(`REPO_PATH`), bind-mounted into the container separately from the code. Each run also records
+its exact commit in `runs/<id>/commit.txt`.
+
+Snapshots are removed automatically after success (by `consolidate.slurm`, or by
+`search.slurm` itself for pinned single-node runs). A **failed** run keeps its snapshot so
+retries can target the same code; list leftovers with `git worktree list` and drop them with
+`git worktree remove --force <path>` (then `git worktree prune`).
 
 Submits a **job array** (`array_search.slurm`, one model per task, `full_eval` each — the
 array bound comes from `mlsys list-models --count`) plus a dependent consolidation job
@@ -67,7 +87,10 @@ sacct -j <orig_id> --format=JobID%18,State,ExitCode   # FAILED / CANCELLED / OOM
 
 Retry only those ids, pinning the **original** experiment dir via `RUN_ID` (a retry gets a new
 array job id — without `RUN_ID` it writes into a fresh `runs/<new_id>/`). Retries bypass
-`submit.sh`, so repeat any non-default knobs on the command line:
+`submit.sh`, so repeat any non-default knobs on the command line. Without `CODE_PATH` the
+retry runs the **live checkout**; to retry on the original run's pinned code, add
+`CODE_PATH=<snapshot path>` to both `--export` lists (the snapshot still exists — it is only
+cleaned up after a successful consolidate; the path is in the original job's log):
 
 ```bash
 sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,HIDDEN=<same_as_before> slurm/array_search.slurm
@@ -86,3 +109,10 @@ safe to re-run manually anytime.
 `sbatch slurm/search.slurm` runs the whole pool in one job (edit `STRATEGY` inside; results in
 `runs/$SLURM_JOB_ID/`). Simpler, but the job holds a GPU for the slowest model's wall-clock and
 one OOM kills the entire run — prefer the array.
+
+A plain `sbatch` executes whatever the checkout contains when the job starts. To pin the code
+at submit time (run it from a run node, like `submit.sh`):
+
+```bash
+CODE_PATH=$(bash slurm/snapshot.sh) sbatch --export=ALL slurm/search.slurm
+```

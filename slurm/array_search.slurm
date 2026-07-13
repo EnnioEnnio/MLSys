@@ -21,16 +21,25 @@
 # order the tasks use to map index -> model). %4 throttles concurrent tasks.
 #
 # Retrying failed tasks: the retry job gets a NEW array job id, so pin the original
-# experiment dir explicitly (and repeat any non-default search knobs):
+# experiment dir explicitly (and repeat any non-default search knobs). Add
+# CODE_PATH=<snapshot path> to run the retry on the original run's pinned code
+# (the snapshot survives failed runs); without it the retry uses the live checkout.
 #   sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,HIDDEN=<same> slurm/array_search.slurm
-# IMPORTANT: Update REPO_PATH below to match your cluster home directory path.
+# IMPORTANT: Update the REPO_PATH default below to match your cluster checkout path.
 # NOTE: Excludes V100 GPUs (CUDA 7.0) since PyTorch 25.03 requires CUDA capability >= 7.5.
 
 # Fail loudly: any unset var, failed command, or broken pipe aborts the task
 # non-zero so the afterok dependency blocks consolidation.
 set -euo pipefail
 
-REPO_PATH=/sc/projects/<GROUP>/<Project>/<*Path>
+# REPO_PATH is the live checkout: home of runs/ (mounted separately below so
+# results outlive code snapshots). CODE_PATH is the code that actually runs —
+# submit.sh points it at an immutable worktree snapshot pinned at submit time
+# (issue #49); on direct sbatch retries it defaults to the live checkout.
+REPO_PATH=${REPO_PATH:-/sc/projects/<GROUP>/<Project>/<*Path>}
+CODE_PATH=${CODE_PATH:-$REPO_PATH}
+MOUNTS=$CODE_PATH:/workspace,$REPO_PATH/runs:/workspace/runs
+mkdir -p "$REPO_PATH/runs"
 
 # RUN_ID names the experiment dir; defaults to this array's job id. Override it
 # (see retry recipe above) so retried tasks write into the original experiment.
@@ -55,6 +64,7 @@ STANDARDIZE_TARGETS=${STANDARDIZE_TARGETS:-1}
 echo "Starting mlsys array task"
 echo "Array job: $SLURM_ARRAY_JOB_ID  task: $SLURM_ARRAY_TASK_ID  run id: $RUN_ID"
 echo "Node: $SLURMD_NODENAME"
+echo "Code: $CODE_PATH ($(git -C "$CODE_PATH" log -1 --oneline 2>/dev/null || echo 'git unavailable'))"
 echo "GPU: $CUDA_VISIBLE_DEVICES"
 echo "code at: $(git -C $REPO_PATH log -1 --oneline) ($(git -C $REPO_PATH branch --show-current))"
 nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader
@@ -74,7 +84,7 @@ flock /tmp/mlsys-container-$USER.lock \
 srun --container-image="nvcr.io#nvidia/pytorch:25.03-py3" \
      --container-name=$CONTAINER_NAME \
      --container-writable \
-     --container-mounts=$REPO_PATH:/workspace \
+     --container-mounts=$MOUNTS \
      bash -c '
 set -euo pipefail
 
@@ -103,7 +113,7 @@ export OUT DATASET HIDDEN HEAD_REPEATS EPOCHS BATCH_SIZE \
        FINETUNE_EPOCHS WARMUP_EPOCHS FINETUNE_LR FINETUNE_BATCH_SIZE GRAD_CLIPPING \
        STANDARDIZE_TARGETS
 srun --container-name=$CONTAINER_NAME \
-     --container-mounts=$REPO_PATH:/workspace \
+     --container-mounts=$MOUNTS \
      --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF,SLURM_ARRAY_TASK_ID,OUT,DATASET,HIDDEN,HEAD_REPEATS,EPOCHS,BATCH_SIZE,FINETUNE_EPOCHS,WARMUP_EPOCHS,FINETUNE_LR,FINETUNE_BATCH_SIZE,GRAD_CLIPPING,STANDARDIZE_TARGETS \
      --container-workdir=/workspace \
      bash -c '

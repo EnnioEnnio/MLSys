@@ -25,16 +25,15 @@ REPO_PATH=/sc/projects/<GROUP>/<Project>/<*Path>
 
 # The experiment dir to consolidate; submit.sh exports it. HIDDEN must match the
 # array run (submit.sh exports the same value to both jobs so the W&B head token
-# can't drift). STRATEGY likewise must match the array run: only full_eval writes
-# both frozen+finetune rows, so any other strategy needs --allow-partial or
-# consolidate_run raises on the "incomplete" pool (see search/consolidate.py).
+# can't drift). STRATEGY likewise must match the array run and is forwarded to
+# `mlsys consolidate --strategy`, which derives --allow-partial itself: only
+# full_eval writes both frozen+finetune rows, so any other strategy merges partial
+# with no regret.json (see search/consolidate.py).
 : "${ARRAY_JOB_ID:?set via --export=ALL,ARRAY_JOB_ID=<array job id>}"
 HIDDEN=${HIDDEN:-256}
 STRATEGY=${STRATEGY:-full_eval}
-ALLOW_PARTIAL_ARGS=""
 if [ "$STRATEGY" != "full_eval" ]; then
   echo "strategy=$STRATEGY (not full_eval): merging with --allow-partial, no regret.json"
-  ALLOW_PARTIAL_ARGS="--allow-partial"
 fi
 
 # The NGC image declares NVIDIA_VISIBLE_DEVICES=all, which makes enroot's GPU
@@ -74,15 +73,14 @@ pip install --no-cache-dir -e /workspace
 
 # Step 2: Merge fragments + recompute regret + push the consolidated W&B run.
 # Add --cleanup to remove the *_task_* fragment dirs after a successful merge:
-#   python -m mlsys consolidate /workspace/runs/$ARRAY_JOB_ID --hidden "$HIDDEN" --wandb --cleanup
-export ALLOW_PARTIAL_ARGS
+#   python -m mlsys consolidate /workspace/runs/$ARRAY_JOB_ID --hidden "$HIDDEN" --strategy "$STRATEGY" --wandb --cleanup
 srun --container-name=$CONTAINER_NAME \
      --container-mounts=$REPO_PATH:/workspace \
-     --container-env=WANDB_API_KEY,ARRAY_JOB_ID,HIDDEN,ALLOW_PARTIAL_ARGS,NVIDIA_VISIBLE_DEVICES \
+     --container-env=WANDB_API_KEY,ARRAY_JOB_ID,HIDDEN,STRATEGY,NVIDIA_VISIBLE_DEVICES \
      --container-workdir=/workspace \
      bash -c '
 set -euo pipefail
-python -m mlsys consolidate /workspace/runs/$ARRAY_JOB_ID --hidden "$HIDDEN" --wandb $ALLOW_PARTIAL_ARGS
+python -m mlsys consolidate /workspace/runs/$ARRAY_JOB_ID --hidden "$HIDDEN" --strategy "$STRATEGY" --wandb
 '
 
 echo "Job completed!"

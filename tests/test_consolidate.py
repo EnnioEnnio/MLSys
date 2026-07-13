@@ -205,6 +205,33 @@ def test_failure_modes(tmp_path, fake_registry) -> None:
         consolidate_run(run_dir)
 
 
+def test_strategy_shapes_run_name_and_implies_allow_partial(tmp_path, fake_registry) -> None:
+    # A frozen-only array (STRATEGY=frozen) never writes finetune rows at all; passing
+    # strategy="frozen" must both skip the "incomplete pool" raise (implied
+    # allow_partial) and use "frozen" (not "full_eval") in the run name/token.
+    run_dir = tmp_path / "790"
+    _write_fragment(run_dir, 0, [_row("alpha", "frozen", 0.5)])
+    _write_fragment(run_dir, 1, [_row("beta", "frozen", 0.9)])
+
+    result = consolidate_run(run_dir, strategy="frozen")
+    assert result.strategy == "frozen"
+    assert result.regret_path is None
+    assert result.run_name == "790_synthetic_frozen_2_model_FCH"
+    # Only the frozen CSV is written — no bare, header-less finetune.csv.
+    assert [p.name for p in result.csv_paths] == [f"{result.run_name}_frozen.csv"]
+    assert not (run_dir / f"{result.run_name}_finetune.csv").exists()
+
+
+def test_empty_pass_csv_skipped_under_explicit_allow_partial(tmp_path, fake_registry) -> None:
+    # Same empty-CSV hazard can hit a full_eval array too, e.g. every finetune task
+    # crashed and the user reruns consolidate with an explicit --allow-partial.
+    run_dir = tmp_path / "791"
+    _write_fragment(run_dir, 0, [_row("alpha", "frozen", 0.5)])
+    result = consolidate_run(run_dir, allow_partial=True)
+    assert len(result.csv_paths) == 1
+    assert not (run_dir / f"{result.run_name}_finetune.csv").exists()
+
+
 # --- End-to-end parity: single-node full_eval vs per-task runs + consolidation ---
 
 torch = pytest.importorskip("torch")

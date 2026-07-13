@@ -173,6 +173,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="experiment dir holding the *_task_* fragment dirs (runs/<ARRAY_JOB_ID>)",
     )
     consolidate.add_argument(
+        "--strategy",
+        default="full_eval",
+        choices=STRATEGIES,
+        help="strategy the array ran with; shapes the exported run name/config. "
+        "Only full_eval writes both frozen+finetune rows, so any other strategy "
+        "implies --allow-partial (default: %(default)s)",
+    )
+    consolidate.add_argument(
         "--hidden",
         type=int,
         default=HeadTrainConfig.hidden,
@@ -324,6 +332,7 @@ def _run_consolidate(args: argparse.Namespace) -> int:
 
     result = consolidate_run(
         args.run_dir,
+        strategy=args.strategy,
         hidden=args.hidden,
         cleanup=args.cleanup,
         allow_partial=args.allow_partial,
@@ -347,7 +356,7 @@ def _run_consolidate(args: argparse.Namespace) -> int:
             name=result.run_name,
             config={
                 "dataset": result.dataset,
-                "strategy": "full_eval",
+                "strategy": result.strategy,
                 "hidden": args.hidden,
                 "consolidated_from": args.run_dir,
             },

@@ -44,6 +44,17 @@ N=$(python -m mlsys list-models --count 2>/dev/null || true)
 [[ "$N" =~ ^[0-9]+$ ]] || N=$(grep -c '^- name:' config/models.yaml)
 [ "$N" -gt 0 ] || { echo "empty model pool" >&2; exit 1; }
 
+# Fail fast on a typo'd STRATEGY: caught here it's one exit code, not N failed GPU
+# array tasks (each argparse-rejects independently, and the dependent consolidate
+# never runs since afterok never fires).
+case "$STRATEGY" in
+  frozen | finetune | full_eval) ;;
+  *)
+    echo "invalid STRATEGY=$STRATEGY (expected frozen|finetune|full_eval)" >&2
+    exit 1
+    ;;
+esac
+
 echo "Submitting array over $N models (0-$((N - 1)), throttle %$THROTTLE)"
 echo "  dataset=$DATASET strategy=$STRATEGY hidden=$HIDDEN activation=$ACTIVATION head_repeats=$HEAD_REPEATS epochs=$EPOCHS batch_size=$BATCH_SIZE"
 echo "  finetune: epochs=$FINETUNE_EPOCHS warmup_epochs=$WARMUP_EPOCHS lr=$FINETUNE_LR batch_size=$FINETUNE_BATCH_SIZE grad_clipping=$GRAD_CLIPPING"

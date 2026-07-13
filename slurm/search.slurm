@@ -4,7 +4,7 @@
 #SBATCH --mail-user=slack:<YOUR_USERNAME>
 #SBATCH --partition=gpu-batch
 #SBATCH -C ARCH:X86
-#SBATCH --time=12:00:00
+#SBATCH --time=14:00:00
 #SBATCH --gpus=a100:1
 #SBATCH --mem=64G
 #SBATCH --job-name=mlsys-search
@@ -84,7 +84,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # they are accepted but ignored by the frozen strategy.
 FINETUNE_ARGS=""
 if [[ "$STRATEGY" == "finetune" || "$STRATEGY" == "full_eval" ]]; then
-  FINETUNE_ARGS="--finetune-epochs 10 --finetune-lr 2e-5 --finetune-batch-size 64 --warmup-epochs 2"
+  FINETUNE_ARGS="--finetune-epochs 10 --finetune-lr 2e-5 --finetune-batch-size 64 --warmup-epochs 2 --grad-clipping 0"
 fi
 
 # Every value-taking flag is passed explicitly at its standard value so nothing is

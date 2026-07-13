@@ -126,6 +126,15 @@ def _build_parser() -> argparse.ArgumentParser:
         default=FinetuneConfig.batch_size,
         help="batch size for the finetune/full_eval joint loop (default: %(default)s)",
     )
+    search.add_argument(
+        "--grad-clipping",
+        type=float,
+        default=FinetuneConfig.grad_clipping,
+        metavar="MAX_NORM",
+        help="clip the finetune/full_eval joint loop's gradients to this global L2 norm "
+        "(0 = off; the pre-clip norm is measured and logged either way, "
+        "default: %(default)s)",
+    )
     search.add_argument("--wandb", action="store_true", help="opt-in W&B logging")
     search.add_argument(
         "--cache-embeddings",
@@ -395,6 +404,7 @@ def _run_search(args: argparse.Namespace) -> int:
         batch_size=args.finetune_batch_size,
         backbone_lr=args.finetune_lr,
         warmup_epochs=args.warmup_epochs,
+        grad_clipping=args.grad_clipping,
     )
 
     wandb_run = None
@@ -420,6 +430,7 @@ def _run_search(args: argparse.Namespace) -> int:
                 "finetune_batch_size": finetune_cfg.batch_size,
                 "finetune_backbone_lr": finetune_cfg.backbone_lr,
                 "finetune_warmup_epochs": finetune_cfg.warmup_epochs,
+                "finetune_grad_clipping": finetune_cfg.grad_clipping,
             },
         )
 

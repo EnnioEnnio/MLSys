@@ -218,6 +218,8 @@ __marimo__/
 .streamlit/secrets.toml
 
 .DS_Store
+# Per-run code snapshots (detached git worktrees created by slurm/snapshot.sh)
+.snapshots/
 # Generated analysis reports — regenerate with `python -m mlsys analyze results/<exp>`.
 # Keep the experiment CSVs (irreproducible run outputs); drop the derived plots/tables.
 results/*/analysis/

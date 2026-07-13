@@ -135,6 +135,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "(0 = off; the pre-clip norm is measured and logged either way, "
         "default: %(default)s)",
     )
+    search.add_argument(
+        "--lr-warmup-ratio",
+        type=float,
+        default=FinetuneConfig.lr_warmup_ratio,
+        metavar="RATIO",
+        help="fraction of the finetune/full_eval joint loop's steps spent ramping the LR up "
+        "before linear decay to 0 (default: %(default)s)",
+    )
     search.add_argument("--wandb", action="store_true", help="opt-in W&B logging")
     search.add_argument(
         "--cache-embeddings",
@@ -405,6 +413,7 @@ def _run_search(args: argparse.Namespace) -> int:
         backbone_lr=args.finetune_lr,
         warmup_epochs=args.warmup_epochs,
         grad_clipping=args.grad_clipping,
+        lr_warmup_ratio=args.lr_warmup_ratio,
     )
 
     wandb_run = None
@@ -431,6 +440,7 @@ def _run_search(args: argparse.Namespace) -> int:
                 "finetune_backbone_lr": finetune_cfg.backbone_lr,
                 "finetune_warmup_epochs": finetune_cfg.warmup_epochs,
                 "finetune_grad_clipping": finetune_cfg.grad_clipping,
+                "finetune_lr_warmup_ratio": finetune_cfg.lr_warmup_ratio,
             },
         )
 

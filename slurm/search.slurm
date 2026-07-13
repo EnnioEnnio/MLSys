@@ -15,8 +15,15 @@
 # `pip install -e /workspace`, which runs every job. NGC's pip constraint file
 # (see Step 1) pins pyarrow/dill in a way that blocks modern datasets, so we strip
 # just those two pins before installing; all other NGC pins stay in force.
-# IMPORTANT: Update REPO_PATH below to match your cluster home directory path.
+# IMPORTANT: Update the REPO_PATH default below to match your cluster checkout path.
 # NOTE: Excludes V100 GPUs (CUDA 7.0) since PyTorch 25.03 requires CUDA capability >= 7.5.
+#
+# Branch-switch safety (issue #49): a plain `sbatch slurm/search.slurm` executes
+# whatever the checkout contains when the job STARTS. To pin the code at submit
+# time (so you can keep working in the checkout while the job is queued):
+#   CODE_PATH=$(bash slurm/snapshot.sh) sbatch --export=ALL slurm/search.slurm
+# The snapshot is removed automatically after a successful run; results always
+# land in $REPO_PATH/runs via a separate mount, so they outlive the snapshot.
 #
 # Strategy selection (edit the STRATEGY variable below):
 #   frozen     — FC head on the frozen backbone; cheap proxy ranking.
@@ -31,12 +38,25 @@
 # non-zero so SLURM/CI don't treat a failed setup as success.
 set -euo pipefail
 
-REPO_PATH=/sc/projects/<GROUP>/<Project>/<*Path>
+# REPO_PATH is the live checkout: home of runs/ (mounted separately below so
+# results outlive code snapshots). CODE_PATH is the code that actually runs —
+# a worktree snapshot when submitted via the pinned recipe above, otherwise
+# the live checkout.
+REPO_PATH=${REPO_PATH:-/sc/projects/<GROUP>/<Project>/<*Path>}
+CODE_PATH=${CODE_PATH:-$REPO_PATH}
+MOUNTS=$CODE_PATH:/workspace,$REPO_PATH/runs:/workspace/runs
+mkdir -p "$REPO_PATH/runs"
 
 echo "Starting mlsys search job"
 echo "Job ID: $SLURM_JOB_ID"
 echo "Node: $SLURMD_NODENAME"
+echo "Code: $CODE_PATH ($(git -C "$CODE_PATH" log -1 --oneline 2>/dev/null || echo 'git unavailable'))"
 echo "GPU: $CUDA_VISIBLE_DEVICES"
+
+# Provenance: pin the run to its exact code (issue #49 nice-to-have).
+mkdir -p "$REPO_PATH/runs/$SLURM_JOB_ID"
+git -C "$CODE_PATH" log -1 --format='%H %s' > "$REPO_PATH/runs/$SLURM_JOB_ID/commit.txt" \
+  || echo "WARNING: could not record commit provenance"
 nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader
 
 # Step 1: Set up container with dependencies (reuses container across jobs)
@@ -45,7 +65,7 @@ CONTAINER_NAME=mlsys-$USER-pytorch2503
 srun --container-image="nvcr.io#nvidia/pytorch:25.03-py3" \
      --container-name=$CONTAINER_NAME \
      --container-writable \
-     --container-mounts=$REPO_PATH:/workspace \
+     --container-mounts=$MOUNTS \
      bash -c '
 set -euo pipefail
 
@@ -91,7 +111,7 @@ fi
 # forgotten on a future run. Two flags are left unset on purpose: --models (omitted =
 # whole pool; there is no explicit "all" token) and --cache-embeddings (v2 stub, no-op).
 srun --container-name=$CONTAINER_NAME \
-     --container-mounts=$REPO_PATH:/workspace \
+     --container-mounts=$MOUNTS \
      --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF \
      --container-workdir=/workspace \
      python -m mlsys search \
@@ -105,6 +125,16 @@ srun --container-name=$CONTAINER_NAME \
        --output-dir /workspace/runs/$SLURM_JOB_ID \
        $FINETUNE_ARGS \
        --wandb
+
+# Snapshot cleanup: the run succeeded (set -e) and results live in
+# $REPO_PATH/runs via the separate mount. Only fires for pinned runs
+# (CODE_PATH != REPO_PATH); a failed job keeps its snapshot for a pinned retry
+# (`sbatch --export=ALL,CODE_PATH=<snapshot> slurm/search.slurm`).
+if [ "$CODE_PATH" != "$REPO_PATH" ]; then
+  git -C "$REPO_PATH" worktree remove --force "$CODE_PATH" \
+    && echo "Removed code snapshot $CODE_PATH" \
+    || echo "WARNING: could not remove code snapshot $CODE_PATH — remove it manually"
+fi
 
 echo "Job completed!"
 echo "Output files:"

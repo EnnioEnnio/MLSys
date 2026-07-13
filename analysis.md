@@ -23,19 +23,19 @@ One **experiment** = one `full_eval` sweep over a model pool at several head wid
 CSVs in a single folder and run `analyze` on that folder:
 
 ```
-results/exp_wine_16/                                       # the input CSVs (12 for a 4-head sweep)
+results/first_fulleval_wine_16_outdated/                                       # the input CSVs (12 for a 4-head sweep)
     2296332_wine_reviews_fulleval_16_model_FCH_frozen.csv
     2296332_wine_reviews_fulleval_16_model_FCH_finetune.csv
     2296332_wine_reviews_fulleval_16_model_FCH_regret.csv
     2296333_wine_reviews_fulleval_16_model_MLP_128_frozen.csv
     ...
-results/exp_wine_16/analysis/                # generated (default --out-dir)
+results/first_fulleval_wine_16_outdated/analysis/                # generated (default --out-dir)
     SUMMARY.md                               # tables + embedded plots, in fixed section order
     FCH/  MLP_128/  MLP_256/  MLP_512/        # per-head tables + plots
     comparison/                              # cross-head tables + plots
 ```
 
-The folder name (`exp_wine_16` here — wine dataset, 16-model pool) is arbitrary; `analyze`
+The folder name (`first_fulleval_wine_16_outdated` here — wine dataset, 16-model pool) is arbitrary; `analyze`
 only uses it as the `SUMMARY.md` title. Name experiments however you like.
 
 ### Filename grammar (how head labels are recovered)
@@ -69,8 +69,8 @@ naming the expected pattern (no silent guessing, no CLI override).
 Discovers the triples, builds every per-head + cross-head artifact, and writes `SUMMARY.md`.
 
 ```bash
-mlsys analyze results/exp_wine_16
-mlsys analyze results/exp_wine_16 --out-dir /tmp/wine_report
+mlsys analyze results/first_fulleval_wine_16_outdated
+mlsys analyze results/first_fulleval_wine_16_outdated --out-dir /tmp/wine_report
 ```
 
 - **No `--metric` flag.** The whole regret pipeline is r²-only (proxy ranking = frozen-r²
@@ -89,9 +89,9 @@ Standalone regret-curve recompute — the "finetune crashed, recover regret with
 
 ```bash
 mlsys regret \
-  --frozen   results/exp_wine_16/2296332_wine_reviews_fulleval_16_model_FCH_frozen.csv \
-  --finetune results/exp_wine_16/2296332_wine_reviews_fulleval_16_model_FCH_finetune.csv \
-  --out      results/exp_wine_16/2296332_wine_reviews_fulleval_16_model_FCH_regret.csv
+  --frozen   results/first_fulleval_wine_16_outdated/2296332_wine_reviews_fulleval_16_model_FCH_frozen.csv \
+  --finetune results/first_fulleval_wine_16_outdated/2296332_wine_reviews_fulleval_16_model_FCH_finetune.csv \
+  --out      results/first_fulleval_wine_16_outdated/2296332_wine_reviews_fulleval_16_model_FCH_regret.csv
 ```
 
 The recomputed curve is byte-identical to what `full_eval` would have written: it reuses

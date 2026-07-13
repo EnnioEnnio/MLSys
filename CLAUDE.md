@@ -59,11 +59,10 @@ mlsys analyze results/<experiment>                 # → results/<experiment>/an
 mlsys regret --frozen F.csv --finetune T.csv [--out R.csv]   # standalone regret recompute (crash recovery)
 ```
 
-Each **experiment** is a folder of CSVs (`results/<experiment>/`, e.g. `exp_wine_16`), one
-head config per run-id named `<runid>_<dataset>_<strategy>_<num>_model_<HEAD>_<kind>.csv`
-(`<kind>` ∈ frozen/finetune/regret/r1/r3; a run-id is analysable once its files include a
-recognised proxy+reference pair — frozen+finetune, or r1+r3. Head label and width come from the
-filename, **not** the `head_type` column). The stem up to `_<kind>` is exactly the W&B run name from
+Each **experiment** is a folder of CSVs (`results/<experiment>/`, e.g. `first_fulleval_wine_16_outdated`), one
+`full_eval` head config per run-id named `<runid>_<dataset>_<strategy>_<num>_model_<HEAD>_<kind>.csv`
+(`<kind>` ∈ frozen/finetune/regret or other labels like e.g. r1, r3; head label and width come from the filename, **not** the
+`head_type` column). The stem up to `_<kind>` is exactly the W&B run name from
 `cli/main.py:_wandb_run_name` (strategy underscore-stripped, `full_eval`→`fulleval`; linear
 head is bare `FCH`, MLP is `MLP_<width>`) — download the CSV from W&B, append `_<kind>`, drop
 it in. `<dataset>` may contain underscores (`wine_reviews`); the loader anchors on the literal

@@ -22,7 +22,7 @@ kill the negative-r² divergences, and is there a quality cost from over-warming
 - one finetune run per model (`head_repeats=1`), so per-model r² deltas are noisy; the robust
   signals are the **divergence count** and the **aggregate distribution**.
 
-Source CSVs: `results/warmup_sweep/`.
+Source CSVs: `results/warmup_sweep_256/`.
 
 ## Bottom line
 

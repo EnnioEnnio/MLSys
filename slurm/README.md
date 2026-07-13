@@ -21,6 +21,7 @@ DATASET=wine_reviews HIDDEN=512 FINETUNE_LR=1e-5 bash slurm/submit.sh
 | Knob | Default | Maps to |
 |---|---|---|
 | `DATASET` | `wine_reviews` | `--dataset` |
+| `STRATEGY` | `full_eval` | `--strategy` (`frozen`/`finetune`/`full_eval`; only `full_eval` produces `regret.json` — the others are merged with `--allow-partial`) |
 | `HIDDEN` | `256` (MLP - 0 for linear probe) | `--hidden` |
 | `ACTIVATION` | `relu` | `--activation` (`relu`/`gelu`/`tanh`/`silu` between the MLP head's two layers; ignored when `HIDDEN=0`) |
 | `HEAD_REPEATS` | `1` | `--head-repeats` |
@@ -35,13 +36,23 @@ DATASET=wine_reviews HIDDEN=512 FINETUNE_LR=1e-5 bash slurm/submit.sh
 
 The consolidate job is pure CPU work and runs on `cpu-batch`; only the array tasks occupy GPUs.
 
-Submits a **job array** (`array_search.slurm`, one model per task, `full_eval` each — the
-array bound comes from `mlsys list-models --count`) plus a dependent consolidation job
-(`consolidate.slurm`, `afterok`). Each task writes a fragment to
+Submits a **job array** (`array_search.slurm`, one model per task, `--strategy $STRATEGY`
+each — the array bound comes from `mlsys list-models --count`) plus a dependent consolidation
+job (`consolidate.slurm`, `afterok`). Each task writes a fragment to
 `runs/<ARRAY_JOB_ID>/<ARRAY_JOB_ID>_task_<n>/` and streams its own W&B run live;
-consolidation merges the fragments into `runs/<ARRAY_JOB_ID>/results.jsonl`, recomputes
-`regret.json` as if a single-node `full_eval` had produced it, exports analysis-ready CSVs,
-and pushes one consolidated W&B run named like a single-node run.
+consolidation merges the fragments into `runs/<ARRAY_JOB_ID>/results.jsonl`, exports
+analysis-ready CSVs, and pushes one consolidated W&B run named like a single-node run.
+
+`STRATEGY` defaults to `full_eval` (both passes, `regret.json` computed). A `frozen`- or
+`finetune`-only array only ever writes one side of the frozen/finetune pair, so
+`consolidate.slurm` automatically adds `--allow-partial` for any non-`full_eval` strategy —
+the merge still produces `results.jsonl` and the pass CSVs, just no `regret.json` (there's
+nothing to compute regret against). Useful for a cheap `frozen`-only sweep, e.g. comparing
+head activations without paying for a finetune pass per arm:
+
+```bash
+STRATEGY=frozen ACTIVATION=gelu HIDDEN=256 bash slurm/submit.sh
+```
 
 ## From run to analysis
 
@@ -70,8 +81,9 @@ array job id — without `RUN_ID` it writes into a fresh `runs/<new_id>/`). Retr
 `submit.sh`, so repeat any non-default knobs on the command line:
 
 ```bash
-sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,HIDDEN=<same_as_before> slurm/array_search.slurm
-sbatch --dependency=afterok:<retry_job_id> --export=ALL,ARRAY_JOB_ID=<orig_id>,HIDDEN=<same> \
+sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,STRATEGY=<same_as_before>,HIDDEN=<same_as_before> \
+  slurm/array_search.slurm
+sbatch --dependency=afterok:<retry_job_id> --export=ALL,ARRAY_JOB_ID=<orig_id>,STRATEGY=<same>,HIDDEN=<same> \
   slurm/consolidate.slurm
 ```
 

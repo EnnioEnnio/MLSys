@@ -34,6 +34,17 @@ THROTTLE=${THROTTLE:-4}          # max concurrent array tasks (%N)
 # Run from anywhere: resolve the repo root for config/ and slurm/ paths.
 cd "$(dirname "$0")/.."
 
+# --- Code snapshot (issue #49) ---
+# Tasks read the code when they RUN, not when they are submitted, so the run is
+# pinned to an immutable worktree snapshot of HEAD: after this script returns
+# you can `git switch` / `git pull` / edit this checkout freely without
+# affecting queued or in-flight tasks. REPO_PATH (this checkout) stays the home
+# of runs/ via a separate bind mount, so results outlive the snapshot, which
+# consolidate.slurm removes after a successful merge.
+export REPO_PATH="$(pwd)"
+export CODE_PATH="$(bash slurm/snapshot.sh)"
+echo "Code snapshot: $CODE_PATH ($(git -C "$CODE_PATH" log -1 --oneline))"
+
 # Pool size, ideally from the same source of truth as the tasks' index->model
 # mapping (load_specs order). HPI login nodes block python outright (the wrapper
 # may even print its refusal to stdout with exit 0), so validate the output is a
@@ -52,4 +63,9 @@ echo "Array job: $ARRAY_ID"
 CONSOLIDATE_ID=$(sbatch --parsable --dependency=afterok:"$ARRAY_ID" \
   --export=ALL,ARRAY_JOB_ID="$ARRAY_ID" slurm/consolidate.slurm)
 echo "Consolidate job: $CONSOLIDATE_ID (afterok:$ARRAY_ID)"
+
+# Provenance: pin the run to its exact code (issue #49 nice-to-have).
+mkdir -p "runs/$ARRAY_ID"
+git -C "$CODE_PATH" log -1 --format='%H %s' > "runs/$ARRAY_ID/commit.txt"
+
 echo "Results will land in runs/$ARRAY_ID/"

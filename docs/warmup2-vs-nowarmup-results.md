@@ -40,7 +40,7 @@ Warmup rescued two backbones that blew up without it:
 | deberta-v3-base | −0.623 | −0.240 (still diverged) |
 
 `deberta-v3-base` is fragile in both runs — warmup halves its damage but doesn't cure it,
-so it's an honest control that warmup is not a blanket fix. As in `exp_wine_16`, the diverged
+so it's an honest control that warmup is not a blanket fix. As in `first_fulleval_wine_16_outdated`, the diverged
 runs keep a healthy Spearman (0.86–0.93): a ranking-preserving scale/offset blow-up
 consistent with head-driven feature distortion, exactly the failure mode warmup targets.
 

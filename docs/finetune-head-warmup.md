@@ -21,7 +21,7 @@ Cluster runs use `2` (`WARMUP_EPOCHS` in `slurm/submit.sh`).
 
 With a **freshly random-initialised** head, the first joint steps backprop large,
 feature-distorting gradients from the untrained head into the pretrained backbone,
-wrecking the very features the backbone brings. In `exp_wine_16`, 12/64 finetunes
+wrecking the very features the backbone brings. In `first_fulleval_wine_16_outdated`, 12/64 finetunes
 diverged to negative r² (Spearman stayed intact — a ranking-preserving scale/offset blow-up
 consistent with head-driven distortion). Warming the head up first means the backbone only
 ever sees gradients from an already-sensible head.

@@ -315,9 +315,9 @@ def _make_epoch_logger(model: str, strategy: str, wandb_run: object) -> EpochCal
 
     step_metric = f"{model}/{strategy}/epoch"
     wandb.define_metric(step_metric)
-    # grad_norm/grad_norm_max only arrive as extras from the finetune joint loop;
+    # grad_norm/grad_norm_max/lr only arrive as extras from the finetune joint loop;
     # defining them for the frozen pass too is harmless (the keys are never logged).
-    for key in ("train_mse", "val_mse", "grad_norm", "grad_norm_max"):
+    for key in ("train_mse", "val_mse", "grad_norm", "grad_norm_max", "lr"):
         wandb.define_metric(f"{model}/{strategy}/{key}", step_metric=step_metric)
 
     def _log(epoch: int, train_mse: float, val_mse: float, **extras: float) -> None:

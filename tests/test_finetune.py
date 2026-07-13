@@ -145,6 +145,33 @@ def test_lr_schedule_warms_up_then_decays() -> None:
     assert lrs[-1] < 1e-6, "LR should decay close to 0 by the final step"
 
 
+def test_lr_stop_reports_final_scheduler_lr_and_streams_per_epoch() -> None:
+    torch.manual_seed(0)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+    backbone = _TrainableFakeBackbone(spec, "cpu")
+    head = FCHead(in_dim=8, hidden=None)
+
+    streamed_lrs: list[float] = []
+
+    def _cb(epoch: int, train_mse: float, val_mse: float, **extras: float) -> None:
+        streamed_lrs.append(extras["lr"])
+
+    result = train_full_model(
+        cast(TrainableBackbone, backbone),
+        head,
+        _rows(_FakeDataset()),
+        HeadTrainConfig(),
+        FinetuneConfig(epochs=6, batch_size=4, backbone_lr=2e-5, head_lr=2e-5),
+        "cpu",
+        epoch_callback=_cb,
+    )
+
+    assert result.lr_stop is not None
+    assert result.lr_stop < 1e-6, "lr_stop should reflect the near-fully-decayed final LR"
+    assert len(streamed_lrs) == result.epochs_run
+    assert streamed_lrs[-1] == result.lr_stop, "streamed per-epoch lr should end at lr_stop"
+
+
 def test_train_full_model_updates_backbone_params() -> None:
     torch.manual_seed(0)
     spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)

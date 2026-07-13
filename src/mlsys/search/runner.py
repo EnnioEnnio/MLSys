@@ -216,7 +216,10 @@ def finetune_candidate(
     expectations collapse to point estimates (see REGRET.md note 2).
 
     ``seed``, if given, is applied right before the head is built, so head init + the joint
-     loop's shuffle order are both reproducible.
+    loop's shuffle order are both pinned to it. This doesn't make a *run* reproducible (the
+    seed itself is drawn randomly per process — see :func:`run_finetune`); it makes every
+    candidate *within* a run share the same seed, so cross-model comparisons are a fair
+    apples-to-apples fight rather than each model getting different luck of the draw.
 
     Static / non-trainable backbones (``can_finetune=False``, e.g. model2vec) can't be
     fine-tuned, so we fall back to the frozen :func:`score_candidate` score and tag the row
@@ -255,6 +258,7 @@ def finetune_candidate(
                 "grad_clipping": finetune_config.grad_clipping,
                 "grad_norm_mean": None,
                 "grad_norm_max_overall": None,
+                "lr_stop": None,
             }
         )
         return record
@@ -324,5 +328,9 @@ def finetune_candidate(
             "grad_norm_max_overall": (
                 max(result.grad_norm_max_curve) if result.grad_norm_max_curve else None
             ),
+            # Scheduler LR (backbone group) at the last executed step — pairs with
+            # epochs_run to show where on the warmup/decay schedule the run stopped,
+            # without recomputing it from epochs_run + total steps by hand.
+            "lr_stop": result.lr_stop,
         },
     )

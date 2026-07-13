@@ -150,6 +150,7 @@ def train_full_model(
     val_curve: list[float] = []
     grad_norm_curve: list[float] = []
     grad_norm_max_curve: list[float] = []
+    lr_curve: list[float] = []
     patience = 0
     epochs_run = 0
 
@@ -178,6 +179,9 @@ def train_full_model(
         train_curve.append(total / max(seen, 1))
         grad_norm_curve.append(sum(step_norms) / len(step_norms))
         grad_norm_max_curve.append(max(step_norms))
+        # Backbone param group's LR (index 0) after this epoch's last step; the head
+        # group rides the same warmup/decay factor scaled by its own base LR.
+        lr_curve.append(scheduler.get_last_lr()[0])
 
         backbone.eval()
         head.eval()
@@ -195,6 +199,7 @@ def train_full_model(
                 val_curve[-1],
                 grad_norm=grad_norm_curve[-1],
                 grad_norm_max=grad_norm_max_curve[-1],
+                lr=lr_curve[-1],
             )
 
         if val_mse + finetune_cfg.min_delta < best_val:
@@ -207,6 +212,9 @@ def train_full_model(
                 break
 
     _restore(tracked, best_state)
+    # lr_curve is empty if finetune_cfg.epochs == 0 (loop never ran); the scheduler
+    # still applies its step-0 factor at construction, so get_last_lr() is valid either way.
+    lr_stop = lr_curve[-1] if lr_curve else scheduler.get_last_lr()[0]
     return HeadTrainResult(
         head=head,
         train_curve=train_curve,
@@ -215,4 +223,5 @@ def train_full_model(
         epochs_run=epochs_run,
         grad_norm_curve=grad_norm_curve,
         grad_norm_max_curve=grad_norm_max_curve,
+        lr_stop=lr_stop,
     )

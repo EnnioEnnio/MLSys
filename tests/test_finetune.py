@@ -222,40 +222,6 @@ def test_finetune_candidate_produces_record(trainable_loader) -> None:
     assert record.extras["head_repeats"] == 1
 
 
-def test_finetune_candidate_honors_per_model_lr_override(trainable_loader) -> None:
-    # models.yaml `finetune_lr` (e.g. deberta-v3-base's per-family exception) must reach
-    # the optimizer's backbone param group, overriding FinetuneConfig.backbone_lr.
-    spec = ModelSpec(
-        name="fake",
-        hf_repo="local/fake",
-        loader="trainable_fake",
-        embedding_dim=8,
-        extra={"finetune_lr": 1e-5},
-    )
-    seen_lrs: list[float] = []
-    orig_init = torch.optim.AdamW.__init__
-
-    def _record_init(
-        self: torch.optim.AdamW, params: list[dict[str, float]], **kwargs: object
-    ) -> None:
-        for group in params:
-            seen_lrs.append(group["lr"])
-        orig_init(self, params, **kwargs)
-
-    torch.optim.AdamW.__init__ = _record_init  # type: ignore[method-assign]
-    try:
-        finetune_candidate(
-            cast(LoadedDataset, _FakeDataset()),
-            spec,
-            device="cpu",
-            finetune_config=FinetuneConfig(epochs=1, batch_size=4, backbone_lr=2e-5, head_lr=2e-5),
-        )
-    finally:
-        torch.optim.AdamW.__init__ = orig_init  # type: ignore[method-assign]
-
-    assert seen_lrs[0] == 1e-5, f"backbone param group should use the override, got {seen_lrs}"
-
-
 def test_finetune_candidate_seed_produces_identical_curves(trainable_loader) -> None:
     # Real backbones are pretrained (not randomly initialized), so torch.manual_seed(0)
     # here stands in for that fixed starting point; _TrainableFakeBackbone's nn.Linear

@@ -42,4 +42,8 @@ pair. The table below is computed straight from the CSVs in `results/activation_
 
 ## Conclusion
 
-TODO — keep `relu` as the default, or switch.
+The ranking does move (proxy top-1 differs for all four arms, pairwise Spearman only
+0.374–0.691), so the "if it doesn't move, keep `relu`" bar from [Why](#why) isn't met. `tanh` also
+leads on both mean r² (0.7159) and mean spearman (0.8396) in this sweep. **Recommendation:** switch
+the cluster default away from `relu` to `tanh` where feasible, but confirm first on a second
+dataset.

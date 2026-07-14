@@ -155,7 +155,7 @@ def test_idempotent_rerun_and_keep_last_dedupe(tmp_path, fake_registry) -> None:
     regret_first = (run_dir / "regret.json").read_bytes()
 
     payload = json.loads(regret_first)
-    assert payload["frozen_r2"]["gamma"] == pytest.approx(0.95)  # keep-last
+    assert payload["frozen_scores"]["gamma"] == pytest.approx(0.95)  # keep-last
     assert payload["proxy_ranking"][0] == "gamma"
 
     second = consolidate_run(run_dir)

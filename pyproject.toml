@@ -20,6 +20,9 @@ dependencies = [
     "pyyaml",
     "numpy",
     "scipy",
+    # ROUGE scoring for the summarization task path. Light, pure-Python; must be in
+    # core (not the analysis group) because scoring runs *in* the pipeline eval step.
+    "rouge-score",
     "tqdm",
     "wandb",
     "python-dotenv",

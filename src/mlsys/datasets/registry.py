@@ -21,13 +21,16 @@ REQUIRED_FIELDS = (
 REQUIRED_SPLITS = ("train", "val", "test")
 
 
+TARGET_TYPES = ("regression", "summarization")
+
+
 @dataclass(frozen=True)
 class DatasetSpec:
     name: str
     hf_repo: str
     splits: dict[str, str]
     target_column: str
-    target_type: Literal["regression"]
+    target_type: Literal["regression", "summarization"]
     text_template: str
 
 
@@ -43,9 +46,9 @@ def load_specs(path: Path | None = None) -> dict[str, DatasetSpec]:
         for field in REQUIRED_FIELDS:
             if field not in entry:
                 raise ValueError(f"datasets.yaml entry missing required field {field!r}: {entry}")
-        if entry["target_type"] != "regression":
+        if entry["target_type"] not in TARGET_TYPES:
             raise ValueError(
-                f"v1 supports target_type=regression only; got {entry['target_type']!r}"
+                f"unsupported target_type {entry['target_type']!r}; supported: {TARGET_TYPES}"
             )
         missing = [s for s in REQUIRED_SPLITS if s not in entry["splits"]]
         if missing:
@@ -55,7 +58,7 @@ def load_specs(path: Path | None = None) -> dict[str, DatasetSpec]:
             hf_repo=entry["hf_repo"],
             splits=dict(entry["splits"]),
             target_column=entry["target_column"],
-            target_type="regression",
+            target_type=entry["target_type"],
             text_template=entry["text_template"],
         )
         if spec.name in specs:

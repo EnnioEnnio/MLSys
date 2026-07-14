@@ -60,11 +60,11 @@ def recompute_regret(frozen: pd.DataFrame, finetune: pd.DataFrame) -> pd.DataFra
 def regret_json_payload(
     frozen: pd.DataFrame, finetune: pd.DataFrame, dataset: str | None = None
 ) -> dict[str, object]:
-    """Mirror ``full_eval._write_regret_json``'s payload for the standalone ``--json`` path."""
+    """Mirror the pipeline's ``regret.json`` payload for the standalone ``--json`` path."""
     proxy_ranking = proxy_ranking_from_frozen(frozen)
-    frozen_r2 = _r2_map(frozen)
-    finetune_r2 = _r2_map(finetune)
-    curve = regret_curve(proxy_ranking, finetune_r2)
+    frozen_scores = _r2_map(frozen)
+    finetune_scores = _r2_map(finetune)
+    curve = regret_curve(proxy_ranking, finetune_scores)
     if dataset is None and "dataset" in frozen.columns and len(frozen):
         dataset = str(frozen["dataset"].iloc[0])
     return {
@@ -73,8 +73,8 @@ def regret_json_payload(
         "higher_is_better": True,
         "regret_estimator": "point_estimate",
         "proxy_ranking": proxy_ranking,
-        "frozen_r2": frozen_r2,
-        "finetune_r2": finetune_r2,
+        "frozen_scores": frozen_scores,
+        "finetune_scores": finetune_scores,
         "curve": [p.to_dict() for p in curve],
     }
 

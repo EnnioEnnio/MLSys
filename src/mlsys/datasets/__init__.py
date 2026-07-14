@@ -25,7 +25,27 @@ __all__ = [
 @dataclass(frozen=True)
 class Row:
     text: str
-    target: float
+    # Regression rows carry a float; summarization rows carry the reference summary
+    # string. The regression consumers (`_embed_split`, `train_full_model`) only ever
+    # see float targets on their path, so nothing regresses.
+    target: float | str
+
+
+def _parse_target(target_type: str, raw: Any) -> float | str | None:
+    """Coerce a raw target cell to the row's target type, or None to drop the row.
+
+    - ``regression``: ``float(raw)``, dropped on None / non-castable.
+    - ``summarization``: ``str(raw)``, dropped on None / empty-or-whitespace.
+    """
+    if raw is None:
+        return None
+    if target_type == "summarization":
+        text = str(raw)
+        return text if text.strip() else None
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        return None
 
 
 class _SafeDict(dict[str, Any]):
@@ -59,15 +79,12 @@ class _SplitView:
     def __iter__(self) -> Iterator[Row]:
         template = self.spec.text_template
         target_col = self.spec.target_column
+        target_type = self.spec.target_type
         for row in self.hf_split:
-            target_val = row[target_col]
-            if target_val is None:
+            target = _parse_target(target_type, row[target_col])
+            if target is None:
                 continue
-            try:
-                target_float = float(target_val)
-            except (ValueError, TypeError):
-                continue
-            yield Row(text=render_template(template, row), target=target_float)
+            yield Row(text=render_template(template, row), target=target)
 
     def __len__(self) -> int:
         if self._filtered_len is None:

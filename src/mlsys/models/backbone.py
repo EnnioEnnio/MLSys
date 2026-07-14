@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -43,6 +43,46 @@ class TrainableBackbone(Backbone, Protocol):
 
     def encode_trainable(self, texts: list[str]) -> torch.Tensor:
         """Like :meth:`encode` but grad-enabled (no ``inference_mode``), for fine-tuning."""
+        ...
+
+    def train(self) -> None:
+        """Put the underlying model in training mode (dropout etc. active)."""
+        ...
+
+    def eval(self) -> None:
+        """Put the underlying model in eval mode."""
+        ...
+
+
+@runtime_checkable
+class GenerativeBackbone(Protocol):
+    """A seq2seq generator (the summarization task path).
+
+    Deliberately **not** a :class:`Backbone` — a generator has no meaningful fixed-width
+    ``encode``. The frozen proxy trains only the LM/generation head (``set_trainable("head")``,
+    teacher-forced cross-entropy); ``finetune`` unfreezes the whole model
+    (``set_trainable("full")``). ``generate`` produces summaries for ROUGE scoring. Adapters
+    set ``can_finetune`` and expose the unfrozen weights via :meth:`trainable_parameters`.
+    """
+
+    name: str
+    can_finetune: bool
+
+    def teacher_forcing_loss(self, sources: list[str], targets: list[str]) -> torch.Tensor:
+        """Cross-entropy of teacher-forced ``targets`` given ``sources`` (grads flow to
+        whatever is currently unfrozen — no ``inference_mode``)."""
+        ...
+
+    def generate(self, sources: list[str]) -> list[str]:
+        """Decode a summary string for each source (``inference_mode``)."""
+        ...
+
+    def set_trainable(self, scope: Literal["head", "full"]) -> None:
+        """Unfreeze only the generation head (``"head"``) or the whole model (``"full"``)."""
+        ...
+
+    def trainable_parameters(self) -> Iterator[torch.nn.Parameter]:
+        """The currently-unfrozen parameters the optimiser should update."""
         ...
 
     def train(self) -> None:

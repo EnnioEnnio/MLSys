@@ -79,46 +79,53 @@ def regret_curve(
 
 @dataclass(frozen=True)
 class RegretSummary:
-    """A dataset-level regret result: proxy ranking, both r2 maps, and the budget curve."""
+    """A dataset-level regret result: proxy ranking, both score maps, and the budget curve.
+
+    ``metric`` names the higher-is-better score the maps hold — ``r2`` for regression,
+    ``rougeL`` for summarization. The regret math is metric-agnostic; only the label differs.
+    """
 
     dataset: str
+    metric: str
     proxy_ranking: list[str]
-    frozen_r2: dict[str, float]
-    finetune_r2: dict[str, float]
+    frozen_scores: dict[str, float]
+    finetune_scores: dict[str, float]
     curve: list[RegretPoint]
 
     def to_payload(self) -> dict:
         return {
             "dataset": self.dataset,
-            "metric": "r2",
+            "metric": self.metric,
             "higher_is_better": True,
             # head_repeats=1 for finetune, so the SHiFT expectations collapse to point
             # estimates rather than being averaged over runs (see REGRET.md note 2).
             "regret_estimator": "point_estimate",
             "proxy_ranking": self.proxy_ranking,
-            "frozen_r2": self.frozen_r2,
-            "finetune_r2": self.finetune_r2,
+            "frozen_scores": self.frozen_scores,
+            "finetune_scores": self.finetune_scores,
             "curve": [p.to_dict() for p in self.curve],
         }
 
 
 def summarize_regret(
     dataset: str,
-    frozen_r2: dict[str, float],
-    finetune_r2: dict[str, float],
+    frozen_scores: dict[str, float],
+    finetune_scores: dict[str, float],
+    metric: str = "r2",
 ) -> RegretSummary:
-    """Rank by frozen r2 (desc) and compute the regret-vs-budget curve.
+    """Rank by frozen ``metric`` (desc) and compute the regret-vs-budget curve.
 
-    ``sorted`` is stable, so ties in ``frozen_r2`` break by its insertion order — the caller
-    owns that ordering (registry order reproduces a single-node run's tie-break exactly).
+    ``sorted`` is stable, so ties in ``frozen_scores`` break by its insertion order — the
+    caller owns that ordering (registry order reproduces a single-node run's tie-break exactly).
     """
-    proxy_ranking = sorted(frozen_r2, key=lambda m: frozen_r2[m], reverse=True)
-    curve = regret_curve(proxy_ranking, finetune_r2)
+    proxy_ranking = sorted(frozen_scores, key=lambda m: frozen_scores[m], reverse=True)
+    curve = regret_curve(proxy_ranking, finetune_scores)
     return RegretSummary(
         dataset=dataset,
+        metric=metric,
         proxy_ranking=proxy_ranking,
-        frozen_r2=frozen_r2,
-        finetune_r2=finetune_r2,
+        frozen_scores=frozen_scores,
+        finetune_scores=finetune_scores,
         curve=curve,
     )
 

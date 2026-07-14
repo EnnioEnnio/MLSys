@@ -159,6 +159,7 @@ def run_finetune(
     if head_repeats != 1:
         raise ValueError("finetune currently supports head_repeats=1")
     seed = make_seeds(1)[0]
+    return _run_pass(
         specs,
         out_path=results_path(output_dir),
         device=device,

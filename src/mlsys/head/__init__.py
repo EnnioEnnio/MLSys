@@ -2,12 +2,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Protocol
 
 import torch
 from torch import nn
+
+# Activations selectable for the MLP head's hidden layer (--activation). The linear
+# probe has no activation, so this only applies when hidden > 0.
+ACTIVATIONS: dict[str, Callable[[], nn.Module]] = {
+    "relu": nn.ReLU,
+    "gelu": nn.GELU,
+    "tanh": nn.Tanh,
+    "silu": nn.SiLU,
+}
+
+
+def _build_activation(name: str) -> nn.Module:
+    if name not in ACTIVATIONS:
+        raise ValueError(f"unknown activation {name!r}; known: {sorted(ACTIVATIONS)}")
+    return ACTIVATIONS[name]()
 
 
 class EpochCallback(Protocol):
@@ -21,16 +36,26 @@ class EpochCallback(Protocol):
 
 
 class FCHead(nn.Module):
-    """Linear-probe head. Single `nn.Linear` by default; optional 2-layer MLP."""
+    """Linear-probe head. Single `nn.Linear` by default; optional 2-layer MLP.
 
-    def __init__(self, in_dim: int, hidden: int | None = None, out_dim: int = 1) -> None:
+    ``activation`` names the nonlinearity between the MLP's two layers (see
+    :data:`ACTIVATIONS`); it is ignored on the linear path, which has none.
+    """
+
+    def __init__(
+        self,
+        in_dim: int,
+        hidden: int | None = None,
+        out_dim: int = 1,
+        activation: str = "relu",
+    ) -> None:
         super().__init__()
         if hidden is None or hidden <= 0:
             self.net: nn.Module = nn.Linear(in_dim, out_dim)
         else:
             self.net = nn.Sequential(
                 nn.Linear(in_dim, hidden),
-                nn.ReLU(),
+                _build_activation(activation),
                 nn.Linear(hidden, out_dim),
             )
 
@@ -47,6 +72,15 @@ class HeadTrainConfig:
     early_stop_patience: int = 3
     min_delta: float = 1e-3
     hidden: int | None = None
+    # Nonlinearity between the MLP head's two layers; ignored by the linear probe
+    # (hidden None/<=0), which has no activation.
+    activation: str = "relu"
+
+    def __post_init__(self) -> None:
+        if self.activation not in ACTIVATIONS:
+            raise ValueError(
+                f"unknown activation {self.activation!r}; known: {sorted(ACTIVATIONS)}"
+            )
 
 
 @dataclass(frozen=True)
@@ -86,8 +120,9 @@ def train_head(
     """Train an FCHead with AdamW + MSE, early-stop on val-MSE plateau.
 
     Pass ``head`` to train an existing FCHead in place (e.g. the LP-FT warmup phase);
-    its ``in_dim``/``hidden`` come from the module, so ``config.hidden`` is ignored.
-    Otherwise a fresh FCHead is built from ``x_train`` width + ``config.hidden``.
+    its ``in_dim``/``hidden``/activation come from the module, so ``config.hidden`` and
+    ``config.activation`` are ignored. Otherwise a fresh FCHead is built from ``x_train``
+    width + ``config.hidden`` + ``config.activation``.
     """
     if config is None:
         config = HeadTrainConfig()
@@ -103,7 +138,9 @@ def train_head(
             torch.cuda.manual_seed_all(seed)
     device = x_train.device
     if head is None:
-        head = FCHead(in_dim=x_train.size(1), hidden=config.hidden).to(device)
+        head = FCHead(
+            in_dim=x_train.size(1), hidden=config.hidden, activation=config.activation
+        ).to(device)
     optim = torch.optim.AdamW(head.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     loss_fn = nn.MSELoss()
 

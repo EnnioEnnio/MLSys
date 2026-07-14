@@ -29,6 +29,8 @@ class DatasetSpec:
     target_column: str
     target_type: Literal["regression"]
     text_template: str
+    shuffle_seed: int | None = None
+    base_split: str | None = None
 
 
 def _config_path() -> Path:
@@ -50,6 +52,20 @@ def load_specs(path: Path | None = None) -> dict[str, DatasetSpec]:
         missing = [s for s in REQUIRED_SPLITS if s not in entry["splits"]]
         if missing:
             raise ValueError(f"datasets.yaml entry {entry['name']!r}: missing split(s) {missing}")
+        shuffle_seed = entry.get("shuffle_seed")
+        base_split = entry.get("base_split")
+        if (shuffle_seed is None) != (base_split is None):
+            raise ValueError(
+                f"datasets.yaml entry {entry['name']!r}: shuffle_seed and base_split "
+                "must both be set or both omitted"
+            )
+        if shuffle_seed is not None:
+            for logical, count_str in entry["splits"].items():
+                if not str(count_str).isdigit():
+                    raise ValueError(
+                        f"datasets.yaml entry {entry['name']!r}: splits.{logical} must be a "
+                        f"plain row count when shuffle_seed is set, got {count_str!r}"
+                    )
         spec = DatasetSpec(
             name=entry["name"],
             hf_repo=entry["hf_repo"],
@@ -57,6 +73,8 @@ def load_specs(path: Path | None = None) -> dict[str, DatasetSpec]:
             target_column=entry["target_column"],
             target_type="regression",
             text_template=entry["text_template"],
+            shuffle_seed=shuffle_seed,
+            base_split=base_split,
         )
         if spec.name in specs:
             raise ValueError(f"duplicate dataset name in datasets.yaml: {spec.name}")

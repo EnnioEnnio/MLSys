@@ -116,7 +116,12 @@ in via `can_finetune=True` on its adapter — model2vec is `False`). To add a mo
 **New dataset** — append to `config/datasets.yaml`: `name`, `hf_repo`, `splits`
 (`train`/`val`/`test` → HF split names, all required), `target_column`,
 `target_type: regression`, `text_template`. Missing template fields render as
-`"unknown"`.
+`"unknown"`. Datasets that only expose one physical HF split (no real
+train/val/test) can instead set `base_split` + `shuffle_seed`; in that mode
+`splits` values are plain row counts (not HF slice strings), and the loader
+loads `base_split` once, shuffles it with the fixed seed, then slices off
+`train`/`val`/`test` in that order — deterministic and non-overlapping across
+runs (e.g. `usa_real_estate`).
 
 ## Conventions
 

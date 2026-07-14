@@ -106,7 +106,19 @@ def load_dataset(name: str) -> LoadedDataset:
 
     spec = get_spec(name)
     splits: dict[str, _SplitView] = {}
-    for logical, hf_split_name in spec.splits.items():
-        hf_split = hf_load_dataset(spec.hf_repo, split=hf_split_name)
-        splits[logical] = _SplitView(spec=spec, hf_split=hf_split)
+    if spec.shuffle_seed is not None:
+        assert spec.base_split is not None  # enforced together by load_specs()
+        base = hf_load_dataset(spec.hf_repo, split=spec.base_split)
+        base = base.shuffle(seed=spec.shuffle_seed)
+        offset = 0
+        for logical, count_str in spec.splits.items():
+            count = int(count_str)
+            splits[logical] = _SplitView(
+                spec=spec, hf_split=base.select(range(offset, offset + count))
+            )
+            offset += count
+    else:
+        for logical, hf_split_name in spec.splits.items():
+            hf_split = hf_load_dataset(spec.hf_repo, split=hf_split_name)
+            splits[logical] = _SplitView(spec=spec, hf_split=hf_split)
     return LoadedDataset(spec=spec, splits=splits)

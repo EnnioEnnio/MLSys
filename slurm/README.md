@@ -23,7 +23,9 @@ DATASET=wine_reviews HIDDEN=512 FINETUNE_LR=1e-5 bash slurm/submit.sh
 | Knob | Default | Maps to |
 |---|---|---|
 | `DATASET` | `wine_reviews` | `--dataset` |
+| `STRATEGY` | `full_eval` | `--strategy` (`frozen`/`finetune`/`full_eval`; only `full_eval` produces `regret.json` — the others are merged with `--allow-partial`) |
 | `HIDDEN` | `256` (MLP - 0 for linear probe) | `--hidden` |
+| `ACTIVATION` | `relu` | `--activation` (`relu`/`gelu`/`tanh`/`silu` between the MLP head's two layers; ignored when `HIDDEN=0`) |
 | `HEAD_REPEATS` | `1` | `--head-repeats` |
 | `EPOCHS` | `30` | `--epochs` |
 | `BATCH_SIZE` | `64` | `--batch-size` |
@@ -55,13 +57,23 @@ Snapshots are removed automatically after success (by `consolidate.slurm`, or by
 retries can target the same code; list leftovers with `git worktree list` and drop them with
 `git worktree remove --force <path>` (then `git worktree prune`).
 
-Submits a **job array** (`array_search.slurm`, one model per task, `full_eval` each — the
-array bound comes from `mlsys list-models --count`) plus a dependent consolidation job
-(`consolidate.slurm`, `afterok`). Each task writes a fragment to
+Submits a **job array** (`array_search.slurm`, one model per task, `--strategy $STRATEGY`
+each — the array bound comes from `mlsys list-models --count`) plus a dependent consolidation
+job (`consolidate.slurm`, `afterok`). Each task writes a fragment to
 `runs/<ARRAY_JOB_ID>/<ARRAY_JOB_ID>_task_<n>/` and streams its own W&B run live;
-consolidation merges the fragments into `runs/<ARRAY_JOB_ID>/results.jsonl`, recomputes
-`regret.json` as if a single-node `full_eval` had produced it, exports analysis-ready CSVs,
-and pushes one consolidated W&B run named like a single-node run.
+consolidation merges the fragments into `runs/<ARRAY_JOB_ID>/results.jsonl`, exports
+analysis-ready CSVs, and pushes one consolidated W&B run named like a single-node run.
+
+`STRATEGY` defaults to `full_eval` (both passes, `regret.json` computed). A `frozen`- or
+`finetune`-only array only ever writes one side of the frozen/finetune pair, so
+`consolidate.slurm` automatically adds `--allow-partial` for any non-`full_eval` strategy —
+the merge still produces `results.jsonl` and the pass CSVs, just no `regret.json` (there's
+nothing to compute regret against). Useful for a cheap `frozen`-only sweep, e.g. comparing
+head activations without paying for a finetune pass per arm:
+
+```bash
+STRATEGY=frozen ACTIVATION=gelu HIDDEN=256 bash slurm/submit.sh
+```
 
 ## From run to analysis
 
@@ -93,8 +105,9 @@ retry runs the **live checkout**; to retry on the original run's pinned code, ad
 cleaned up after a successful consolidate; the path is in the original job's log):
 
 ```bash
-sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,HIDDEN=<same_as_before> slurm/array_search.slurm
-sbatch --dependency=afterok:<retry_job_id> --export=ALL,ARRAY_JOB_ID=<orig_id>,HIDDEN=<same> \
+sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,STRATEGY=<same_as_before>,HIDDEN=<same_as_before> \
+  slurm/array_search.slurm
+sbatch --dependency=afterok:<retry_job_id> --export=ALL,ARRAY_JOB_ID=<orig_id>,STRATEGY=<same>,HIDDEN=<same> \
   slurm/consolidate.slurm
 ```
 
@@ -116,3 +129,20 @@ at submit time (run it from a run node, like `submit.sh`):
 ```bash
 CODE_PATH=$(bash slurm/snapshot.sh) sbatch --export=ALL slurm/search.slurm
 ```
+
+`ACTIVATION` (default `relu`) is also env-overridable on this script, so a few one-off single-node
+runs — e.g. the four arms of the activation sweep in
+[docs/head-activation.md](../docs/head-activation.md) — don't need a job array or a hand-edit
+per run:
+
+```bash
+for ACT in relu gelu tanh silu; do
+  CODE_PATH=$(bash slurm/snapshot.sh) ACTIVATION=$ACT \
+    sbatch --export=ALL,ACTIVATION=$ACT --job-name=mlsys-search-$ACT slurm/search.slurm
+done
+```
+
+Each submission gets its own `SLURM_JOB_ID` and thus its own `runs/<id>/`, so the four arms
+never collide. `STRATEGY` still defaults to `full_eval` inside `search.slurm` — edit it to
+`frozen` first if you only want the cheap proxy pass (see docs/head-activation.md: the sweep
+compares frozen-pass rankings, not finetune ceilings).

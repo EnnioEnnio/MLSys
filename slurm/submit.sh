@@ -18,7 +18,9 @@ set -euo pipefail
 
 # --- Search parameters (forwarded to `python -m mlsys search` in every task) ---
 export DATASET=${DATASET:-wine_reviews}                # dataset name from config/datasets.yaml
+export STRATEGY=${STRATEGY:-full_eval}                 # frozen|finetune|full_eval; only full_eval produces regret.json
 export HIDDEN=${HIDDEN:-256}                             # head hidden width; 0 = linear probe
+export ACTIVATION=${ACTIVATION:-relu}                  # MLP-head activation: relu|gelu|tanh|silu (ignored if HIDDEN=0)
 export HEAD_REPEATS=${HEAD_REPEATS:-1}                 # frozen-pass head repeats (variance)
 export EPOCHS=${EPOCHS:-30}                            # head epochs
 export BATCH_SIZE=${BATCH_SIZE:-64}                    # encode/head batch size
@@ -54,10 +56,24 @@ N=$(python -m mlsys list-models --count 2>/dev/null || true)
 [[ "$N" =~ ^[0-9]+$ ]] || N=$(grep -c '^- name:' config/models.yaml)
 [ "$N" -gt 0 ] || { echo "empty model pool" >&2; exit 1; }
 
+# Fail fast on a typo'd STRATEGY: caught here it's one exit code, not N failed GPU
+# array tasks (each argparse-rejects independently, and the dependent consolidate
+# never runs since afterok never fires).
+case "$STRATEGY" in
+  frozen | finetune | full_eval) ;;
+  *)
+    echo "invalid STRATEGY=$STRATEGY (expected frozen|finetune|full_eval)" >&2
+    exit 1
+    ;;
+esac
+
 echo "Submitting array over $N models (0-$((N - 1)), throttle %$THROTTLE)"
-echo "  dataset=$DATASET hidden=$HIDDEN head_repeats=$HEAD_REPEATS epochs=$EPOCHS batch_size=$BATCH_SIZE"
+echo "  dataset=$DATASET strategy=$STRATEGY hidden=$HIDDEN activation=$ACTIVATION head_repeats=$HEAD_REPEATS epochs=$EPOCHS batch_size=$BATCH_SIZE"
 echo "  finetune: epochs=$FINETUNE_EPOCHS warmup_epochs=$WARMUP_EPOCHS lr=$FINETUNE_LR batch_size=$FINETUNE_BATCH_SIZE grad_clipping=$GRAD_CLIPPING"
 echo "  standardize_targets=$STANDARDIZE_TARGETS"
+if [ "$STRATEGY" != "full_eval" ]; then
+  echo "  strategy=$STRATEGY is not full_eval: consolidation will run with --allow-partial (no regret.json)"
+fi
 ARRAY_ID=$(sbatch --parsable --array=0-$((N - 1))%"$THROTTLE" --export=ALL \
   slurm/array_search.slurm)
 echo "Array job: $ARRAY_ID"

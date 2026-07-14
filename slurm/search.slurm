@@ -93,7 +93,13 @@ STRATEGY=full_eval
 # internally (REGRET note 2), so this setting only affects the frozen proxy pass.
 HEAD_REPEATS=1
 
-echo "Running model search (strategy=$STRATEGY)..."
+# MLP-head activation between the two head layers (relu/gelu/tanh/silu; ignored
+# when --hidden 0, i.e. the linear probe). Env-overridable so single-node sweeps
+# (see docs/head-activation.md) don't need to hand-edit this file per run:
+#   ACTIVATION=gelu sbatch --export=ALL slurm/search.slurm
+ACTIVATION=${ACTIVATION:-relu}
+
+echo "Running model search (strategy=$STRATEGY, activation=$ACTIVATION)..."
 # expandable_segments lets the CUDA allocator grow/shrink segments instead of
 # locking fixed-size blocks, so reserved memory from one backbone can be reused
 # by the next differently-sized one. Without it the ~N-model loop fragments the
@@ -120,6 +126,7 @@ srun --container-name=$CONTAINER_NAME \
        --epochs 30 \
        --batch-size 64 \
        --hidden 256 \
+       --activation $ACTIVATION \
        --device cuda \
        --head-repeats $HEAD_REPEATS \
        --standardize-targets \

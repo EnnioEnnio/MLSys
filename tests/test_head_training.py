@@ -6,7 +6,44 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from mlsys.head import FCHead, HeadTrainConfig, target_stats, train_head  # noqa: E402
+from mlsys.head import (  # noqa: E402
+    ACTIVATIONS,
+    FCHead,
+    HeadTrainConfig,
+    target_stats,
+    train_head,
+)
+
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("relu", torch.nn.ReLU),
+        ("gelu", torch.nn.GELU),
+        ("tanh", torch.nn.Tanh),
+        ("silu", torch.nn.SiLU),
+    ],
+)
+def test_mlp_head_uses_requested_activation(name, expected) -> None:
+    # The four names the sweep compares; the middle module of the 2-layer MLP is the knob.
+    assert set(ACTIVATIONS) == {"relu", "gelu", "tanh", "silu"}
+    head = FCHead(in_dim=8, hidden=16, activation=name)
+    assert isinstance(head.net, torch.nn.Sequential)
+    assert isinstance(head.net[1], expected)
+
+
+def test_linear_probe_has_no_activation() -> None:
+    # hidden None/<=0 -> bare nn.Linear; the activation name is inert, not an error.
+    for hidden in (None, 0):
+        head = FCHead(in_dim=8, hidden=hidden, activation="tanh")
+        assert isinstance(head.net, torch.nn.Linear)
+
+
+def test_unknown_activation_rejected() -> None:
+    with pytest.raises(ValueError, match="unknown activation"):
+        FCHead(in_dim=8, hidden=16, activation="swish")
+    with pytest.raises(ValueError, match="unknown activation"):
+        HeadTrainConfig(activation="swish")
 
 
 def test_head_converges_below_noise_floor() -> None:

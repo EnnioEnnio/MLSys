@@ -30,9 +30,16 @@ MOUNTS=$CODE_PATH:/workspace,$REPO_PATH/runs:/workspace/runs
 
 # The experiment dir to consolidate; submit.sh exports it. HIDDEN must match the
 # array run (submit.sh exports the same value to both jobs so the W&B head token
-# can't drift).
+# can't drift). STRATEGY likewise must match the array run and is forwarded to
+# `mlsys consolidate --strategy`, which derives --allow-partial itself: only
+# full_eval writes both frozen+finetune rows, so any other strategy merges partial
+# with no regret.json (see search/consolidate.py).
 : "${ARRAY_JOB_ID:?set via --export=ALL,ARRAY_JOB_ID=<array job id>}"
 HIDDEN=${HIDDEN:-256}
+STRATEGY=${STRATEGY:-full_eval}
+if [ "$STRATEGY" != "full_eval" ]; then
+  echo "strategy=$STRATEGY (not full_eval): merging with --allow-partial, no regret.json"
+fi
 
 # The NGC image declares NVIDIA_VISIBLE_DEVICES=all, which makes enroot's GPU
 # hook (98-nvidia.sh) run nvidia-container-cli at container start — a binary
@@ -72,14 +79,14 @@ pip install --no-cache-dir -e /workspace
 
 # Step 2: Merge fragments + recompute regret + push the consolidated W&B run.
 # Add --cleanup to remove the *_task_* fragment dirs after a successful merge:
-#   python -m mlsys consolidate /workspace/runs/$ARRAY_JOB_ID --hidden "$HIDDEN" --wandb --cleanup
+#   python -m mlsys consolidate /workspace/runs/$ARRAY_JOB_ID --hidden "$HIDDEN" --strategy "$STRATEGY" --wandb --cleanup
 srun --container-name=$CONTAINER_NAME \
      --container-mounts=$MOUNTS \
-     --container-env=WANDB_API_KEY,ARRAY_JOB_ID,HIDDEN,NVIDIA_VISIBLE_DEVICES \
+     --container-env=WANDB_API_KEY,ARRAY_JOB_ID,HIDDEN,STRATEGY,NVIDIA_VISIBLE_DEVICES \
      --container-workdir=/workspace \
      bash -c '
 set -euo pipefail
-python -m mlsys consolidate /workspace/runs/$ARRAY_JOB_ID --hidden "$HIDDEN" --wandb
+python -m mlsys consolidate /workspace/runs/$ARRAY_JOB_ID --hidden "$HIDDEN" --strategy "$STRATEGY" --wandb
 '
 
 # Snapshot cleanup: the merge succeeded (set -e) and results live in
@@ -96,5 +103,7 @@ fi
 echo "Job completed!"
 echo "Output files:"
 echo "  - runs/$ARRAY_JOB_ID/results.jsonl"
-echo "  - runs/$ARRAY_JOB_ID/regret.json"
+if [ "$STRATEGY" = "full_eval" ]; then
+  echo "  - runs/$ARRAY_JOB_ID/regret.json"
+fi
 echo "  - runs/$ARRAY_JOB_ID/*.csv (analysis-ready)"

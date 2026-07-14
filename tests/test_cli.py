@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 
@@ -168,6 +169,23 @@ def test_grad_clipping_reaches_finetune_config(extra_args, expected, tmp_path, m
     assert captured["grad_clipping"] == expected
 
 
+def _capture_head_config(monkeypatch, field: str, args: list[str]) -> object:
+    import sys
+
+    cli_main = sys.modules["mlsys.cli.main"]
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(cli_main, "load_dataset", lambda name: object())
+
+    def fake_run_strategy(name, dataset, **kwargs):
+        captured[field] = getattr(kwargs["head_config"], field)
+        return []
+
+    monkeypatch.setattr(cli_main, "run_strategy", fake_run_strategy)
+
+    assert main(args) == 0
+    return captured[field]
+
+
 @pytest.mark.parametrize(
     "extra_args,expected",
     [([], True), (["--no-standardize-targets"], False), (["--standardize-targets"], True)],
@@ -177,19 +195,9 @@ def test_standardize_targets_reaches_head_config(
 ) -> None:
     # --[no-]standardize-targets threads through to run_strategy's head_config;
     # default is on (regression recipe, issue #32).
-    import sys
-
-    cli_main = sys.modules["mlsys.cli.main"]
-    captured: dict[str, object] = {}
-    monkeypatch.setattr(cli_main, "load_dataset", lambda name: object())
-
-    def fake_run_strategy(name, dataset, **kwargs):
-        captured["standardize_targets"] = kwargs["head_config"].standardize_targets
-        return []
-
-    monkeypatch.setattr(cli_main, "run_strategy", fake_run_strategy)
-
-    rc = main(
+    got = _capture_head_config(
+        monkeypatch,
+        "standardize_targets",
         [
             "search",
             "--dataset",
@@ -199,17 +207,44 @@ def test_standardize_targets_reaches_head_config(
             "--output-dir",
             str(tmp_path / "run"),
             *extra_args,
-        ]
+        ],
     )
-    assert rc == 0
-    assert captured["standardize_targets"] is expected
+    assert got is expected
 
 
-def _fake_consolidation_result(tmp_path, rows=(), summary=None):
+@pytest.mark.parametrize("extra_args,expected", [([], "relu"), (["--activation", "gelu"], "gelu")])
+def test_activation_reaches_head_config(extra_args, expected, tmp_path, monkeypatch) -> None:
+    # --activation threads through to run_strategy's head_config; default is relu.
+    got = _capture_head_config(
+        monkeypatch,
+        "activation",
+        [
+            "search",
+            "--dataset",
+            "wine_reviews",
+            "--hidden",
+            "256",
+            "--output-dir",
+            str(tmp_path / "run"),
+            *extra_args,
+        ],
+    )
+    assert got == expected
+
+
+def test_unknown_activation_exits_nonzero() -> None:
+    # argparse rejects an out-of-choices --activation at parse time (SystemExit != 0).
+    with pytest.raises(SystemExit) as exc:
+        main(["search", "--dataset", "wine_reviews", "--activation", "swish"])
+    assert exc.value.code != 0
+
+
+def _fake_consolidation_result(tmp_path, rows=(), summary=None, strategy="full_eval"):
     from mlsys.search.consolidate import ConsolidationResult
 
     return ConsolidationResult(
         dataset="wine_reviews",
+        strategy=strategy,
         run_name="42_wine_reviews_fulleval_2_model_FCH",
         rows=list(rows),
         results_path=tmp_path / "results.jsonl",
@@ -232,14 +267,48 @@ def test_consolidate_routes_flags_to_consolidate_run(tmp_path, monkeypatch) -> N
 
     monkeypatch.setattr(consolidate_mod, "consolidate_run", fake_consolidate_run)
 
-    rc = main(["consolidate", str(tmp_path), "--hidden", "512", "--cleanup", "--allow-partial"])
+    rc = main(
+        [
+            "consolidate",
+            str(tmp_path),
+            "--strategy",
+            "frozen",
+            "--hidden",
+            "512",
+            "--cleanup",
+            "--allow-partial",
+        ]
+    )
     assert rc == 0
     assert captured == {
         "run_dir": str(tmp_path),
+        "strategy": "frozen",
         "hidden": 512,
         "cleanup": True,
         "allow_partial": True,
     }
+
+
+def test_consolidate_strategy_defaults_to_full_eval(tmp_path, monkeypatch) -> None:
+    import mlsys.search.consolidate as consolidate_mod
+
+    captured: dict[str, object] = {}
+
+    def fake_consolidate_run(run_dir, **kwargs):
+        captured.update(kwargs)
+        return _fake_consolidation_result(tmp_path)
+
+    monkeypatch.setattr(consolidate_mod, "consolidate_run", fake_consolidate_run)
+
+    rc = main(["consolidate", str(tmp_path)])
+    assert rc == 0
+    assert captured["strategy"] == "full_eval"
+
+
+def test_consolidate_unknown_strategy_exits_nonzero(tmp_path) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["consolidate", str(tmp_path), "--strategy", "bogus"])
+    assert exc.value.code != 0
 
 
 def test_consolidate_wandb_logs_both_pass_tables(tmp_path, monkeypatch) -> None:
@@ -251,6 +320,7 @@ def test_consolidate_wandb_logs_both_pass_tables(tmp_path, monkeypatch) -> None:
     from mlsys.search.regret import summarize_regret
 
     logged: dict[str, object] = {}
+    init_calls: list[dict[str, Any]] = []
 
     class _FakeTable:
         def __init__(self, columns=(), data=()):
@@ -260,8 +330,12 @@ def test_consolidate_wandb_logs_both_pass_tables(tmp_path, monkeypatch) -> None:
         def add_data(self, *row):
             pass
 
+    def _fake_init(**kw):
+        init_calls.append(kw)
+        return types.SimpleNamespace(finish=lambda: None, **kw)
+
     fake_wandb = types.SimpleNamespace(
-        init=lambda **kw: types.SimpleNamespace(finish=lambda: None, **kw),
+        init=_fake_init,
         log=lambda payload: logged.update(payload),
         Table=_FakeTable,
         plot=types.SimpleNamespace(line=lambda *a, **kw: "line-plot"),
@@ -288,19 +362,21 @@ def test_consolidate_wandb_logs_both_pass_tables(tmp_path, monkeypatch) -> None:
 
     import mlsys.search.consolidate as consolidate_mod
 
-    monkeypatch.setattr(
-        consolidate_mod,
-        "consolidate_run",
-        lambda run_dir, **kw: _fake_consolidation_result(tmp_path, rows, summary),
-    )
+    def _fake_consolidate_run(run_dir, **kw):
+        return _fake_consolidation_result(tmp_path, rows, summary, strategy="frozen")
 
-    rc = main(["consolidate", str(tmp_path), "--wandb"])
+    monkeypatch.setattr(consolidate_mod, "consolidate_run", _fake_consolidate_run)
+
+    rc = main(["consolidate", str(tmp_path), "--strategy", "frozen", "--wandb"])
     assert rc == 0
     for name in ("results_frozen", "results_finetune"):
         table = logged[name]
         assert isinstance(table, _FakeTable)
         assert table.columns[:3] == ["model", "dataset", "strategy"]
         assert len(table.data) == 2
+    # The W&B config must reflect the actual strategy consolidated, not a hardcoded
+    # "full_eval" — a STRATEGY=frozen array's config should say so.
+    assert init_calls[0]["config"]["strategy"] == "frozen"
     assert "regret_vs_budget" in logged
 
 

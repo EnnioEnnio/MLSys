@@ -11,7 +11,7 @@ import torch
 
 from mlsys.datasets.registry import REQUIRED_SPLITS
 from mlsys.finetune import FinetuneConfig, train_full_model
-from mlsys.head import EpochCallback, FCHead, HeadTrainConfig, train_head
+from mlsys.head import EpochCallback, FCHead, HeadTrainConfig, seed_torch, train_head
 from mlsys.models.backbone import TrainableBackbone
 from mlsys.models.registry import ModelSpec, build_backbone
 from mlsys.search.metrics import RegressionMetrics, regression_metrics
@@ -136,6 +136,11 @@ def score_candidate(
     reset_peak_gpu_memory()
     if seeds is None:
         seeds = make_seeds(head_repeats)
+    elif len(seeds) != head_repeats:
+        raise ValueError(
+            f"seeds has {len(seeds)} entries but head_repeats={head_repeats}; "
+            "pass exactly one seed per repeat"
+        )
     timer = Timer(label=f"frozen:{spec.name}")
 
     with timer.section("prepare_model_s"):
@@ -200,6 +205,7 @@ def finetune_candidate(
     head_config: HeadTrainConfig | None = None,
     finetune_config: FinetuneConfig | None = None,
     head_repeats: int = 1,
+    seed: int | None = None,
     epoch_callback: EpochCallback | None = None,
 ) -> RunRecord:
     """Unfreeze the backbone and train backbone+head jointly, then score on test.
@@ -208,6 +214,12 @@ def finetune_candidate(
     is fused into training (``train_head_s``), so ``inference_s`` stays 0. ``head_repeats``
     defaults to 1: re-fine-tuning a full backbone N times is too costly, so regret's
     expectations collapse to point estimates (see REGRET.md note 2).
+
+    ``seed``, if given, is applied right before the head is built, so head init + the joint
+    loop's shuffle order are both pinned to it. This doesn't make a *run* reproducible (the
+    seed itself is drawn randomly per process — see :func:`run_finetune`); it makes every
+    candidate *within* a run share the same seed, so cross-model comparisons are a fair
+    apples-to-apples fight rather than each model getting different luck of the draw.
 
     Static / non-trainable backbones (``can_finetune=False``, e.g. model2vec) can't be
     fine-tuned, so we fall back to the frozen :func:`score_candidate` score and tag the row
@@ -234,6 +246,7 @@ def finetune_candidate(
             batch_size=batch_size,
             head_config=head_config,
             head_repeats=head_repeats,
+            seeds=[seed],
             epoch_callback=epoch_callback,
         )
         record.strategy = "finetune"
@@ -245,6 +258,7 @@ def finetune_candidate(
                 "grad_clipping": finetune_config.grad_clipping,
                 "grad_norm_mean": None,
                 "grad_norm_max_overall": None,
+                "lr_stop": None,
             }
         )
         return record
@@ -255,6 +269,8 @@ def finetune_candidate(
     with timer.section("prepare_data_s"):
         rows = {split: list(dataset.split(split)) for split in REQUIRED_SPLITS}
 
+    if seed is not None:
+        seed_torch(seed)
     head = FCHead(in_dim=backbone.embedding_dim, hidden=head_config.hidden).to(device)
 
     with timer.section("train_head_s"):
@@ -312,5 +328,9 @@ def finetune_candidate(
             "grad_norm_max_overall": (
                 max(result.grad_norm_max_curve) if result.grad_norm_max_curve else None
             ),
+            # Scheduler LR (backbone group) at the last executed step — pairs with
+            # epochs_run to show where on the warmup/decay schedule the run stopped,
+            # without recomputing it from epochs_run + total steps by hand.
+            "lr_stop": result.lr_stop,
         },
     )

@@ -156,6 +156,9 @@ def run_finetune(
 ) -> list[RunRecord]:
     """Finetune pass: unfreeze + jointly train every candidate; append to results.jsonl."""
     specs = _resolve_models(model_names)
+    if head_repeats != 1:
+        raise ValueError("finetune currently supports head_repeats=1")
+    seed = make_seeds(1)[0]
     return _run_pass(
         specs,
         out_path=results_path(output_dir),
@@ -171,6 +174,7 @@ def run_finetune(
             head_config=head_config,
             finetune_config=finetune_config,
             head_repeats=head_repeats,
+            seed=seed,
             epoch_callback=cb,
         ),
     )
@@ -313,9 +317,9 @@ def _make_epoch_logger(model: str, strategy: str, wandb_run: object) -> EpochCal
 
     step_metric = f"{model}/{strategy}/epoch"
     wandb.define_metric(step_metric)
-    # grad_norm/grad_norm_max only arrive as extras from the finetune joint loop;
+    # grad_norm/grad_norm_max/lr only arrive as extras from the finetune joint loop;
     # defining them for the frozen pass too is harmless (the keys are never logged).
-    for key in ("train_mse", "val_mse", "grad_norm", "grad_norm_max"):
+    for key in ("train_mse", "val_mse", "grad_norm", "grad_norm_max", "lr"):
         wandb.define_metric(f"{model}/{strategy}/{key}", step_metric=step_metric)
 
     def _log(epoch: int, train_mse: float, val_mse: float, **extras: float) -> None:

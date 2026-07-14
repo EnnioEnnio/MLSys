@@ -44,10 +44,16 @@ class FinetuneConfig:
     # every step so runs log where the gradients live before a threshold is chosen.
     # The warmup phase is head-only on the frozen backbone and is never clipped.
     grad_clipping: float = 0.0
+    # Fraction of the joint loop's total steps spent on LR warmup before linear decay
+    # to 0 (Mosbach et al. 2021 use 10%; Liu et al. 2019 use 6%). Not to be confused
+    # with warmup_epochs (LP-FT head-only warmup) above.
+    lr_warmup_ratio: float = 0.1
 
     def __post_init__(self) -> None:
         if self.grad_clipping < 0:
             raise ValueError(f"grad_clipping must be >= 0 (0 = off), got {self.grad_clipping}")
+        if not 0.0 <= self.lr_warmup_ratio <= 1.0:
+            raise ValueError(f"lr_warmup_ratio must be in [0, 1], got {self.lr_warmup_ratio}")
 
 
 def _snapshot(params: list[torch.nn.Parameter]) -> list[torch.Tensor]:
@@ -75,8 +81,11 @@ def train_full_model(
     on val MSE. The backbone is mutated in place and left in its best-val state; the trained
     head comes back inside the returned result.
     """
+    import math
+
     import torch
     from torch import nn
+    from transformers import get_linear_schedule_with_warmup
 
     train_rows = rows["train"]
     val_rows = rows["val"]
@@ -121,6 +130,16 @@ def train_full_model(
     loss_fn = nn.MSELoss()
 
     bs = finetune_cfg.batch_size
+    # Linear warmup (lr_warmup_ratio of steps) then linear decay to 0, per-batch (not
+    # per-epoch). An early stop before finetune_cfg.epochs completes leaves the schedule
+    # mid-decay rather than fully at 0 — expected, matches HF Trainer's own early-stop
+    # behavior.
+    steps_per_epoch = math.ceil(len(train_texts) / bs)
+    total_steps = steps_per_epoch * finetune_cfg.epochs
+    warmup_steps = max(1, int(finetune_cfg.lr_warmup_ratio * total_steps))
+    scheduler = get_linear_schedule_with_warmup(
+        optim, num_warmup_steps=warmup_steps, num_training_steps=total_steps
+    )
     tracked = backbone_params + head_params
     # 0 = measure-only: clip_grad_norm_ with an inf threshold never rescales but
     # still returns the total pre-clip norm, so the curves below stay populated.
@@ -131,6 +150,7 @@ def train_full_model(
     val_curve: list[float] = []
     grad_norm_curve: list[float] = []
     grad_norm_max_curve: list[float] = []
+    lr_curve: list[float] = []
     patience = 0
     epochs_run = 0
 
@@ -153,11 +173,15 @@ def train_full_model(
             loss.backward()
             step_norms.append(float(torch.nn.utils.clip_grad_norm_(tracked, max_norm)))
             optim.step()
+            scheduler.step()
             total += float(loss.detach()) * len(batch_texts)
             seen += len(batch_texts)
         train_curve.append(total / max(seen, 1))
         grad_norm_curve.append(sum(step_norms) / len(step_norms))
         grad_norm_max_curve.append(max(step_norms))
+        # Backbone param group's LR (index 0) after this epoch's last step; the head
+        # group rides the same warmup/decay factor scaled by its own base LR.
+        lr_curve.append(scheduler.get_last_lr()[0])
 
         backbone.eval()
         head.eval()
@@ -175,6 +199,7 @@ def train_full_model(
                 val_curve[-1],
                 grad_norm=grad_norm_curve[-1],
                 grad_norm_max=grad_norm_max_curve[-1],
+                lr=lr_curve[-1],
             )
 
         if val_mse + finetune_cfg.min_delta < best_val:
@@ -187,6 +212,9 @@ def train_full_model(
                 break
 
     _restore(tracked, best_state)
+    # lr_curve is empty if finetune_cfg.epochs == 0 (loop never ran); the scheduler
+    # still applies its step-0 factor at construction, so get_last_lr() is valid either way.
+    lr_stop = lr_curve[-1] if lr_curve else scheduler.get_last_lr()[0]
     return HeadTrainResult(
         head=head,
         train_curve=train_curve,
@@ -195,4 +223,5 @@ def train_full_model(
         epochs_run=epochs_run,
         grad_norm_curve=grad_norm_curve,
         grad_norm_max_curve=grad_norm_max_curve,
+        lr_stop=lr_stop,
     )

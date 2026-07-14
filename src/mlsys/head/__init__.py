@@ -14,10 +14,16 @@ class EpochCallback(Protocol):
     """Invoked after each epoch so callers can stream curves.
 
     Trainers may attach extra per-epoch scalars as keyword floats (e.g. the finetune
-    joint loop's ``grad_norm``/``grad_norm_max``); implementations must accept them.
+    joint loop's ``grad_norm``/``grad_norm_max``/``lr``); implementations must accept them.
     """
 
     def __call__(self, epoch: int, train_mse: float, val_mse: float, **extras: float) -> None: ...
+
+
+def seed_torch(seed: int) -> None:
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 class FCHead(nn.Module):
@@ -61,6 +67,9 @@ class HeadTrainResult:
     # head trainer, which doesn't clip.
     grad_norm_curve: list[float] = field(default_factory=list)
     grad_norm_max_curve: list[float] = field(default_factory=list)
+    # Scheduler LR (backbone param group) at the last executed step. Populated by the
+    # finetune joint loop only; None for the frozen head trainer, which has no scheduler.
+    lr_stop: float | None = None
 
 
 def _iter_minibatches(
@@ -98,9 +107,7 @@ def train_head(
             "(check the dataset splits aren't empty after loading/filtering)"
         )
     if seed is not None:
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
+        seed_torch(seed)
     device = x_train.device
     if head is None:
         head = FCHead(in_dim=x_train.size(1), hidden=config.hidden).to(device)

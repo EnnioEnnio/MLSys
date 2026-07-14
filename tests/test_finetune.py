@@ -111,6 +111,67 @@ def _rows(ds: _FakeDataset) -> dict[str, list[Row]]:
     return {s: list(ds.split(s)) for s in ("train", "val", "test")}
 
 
+def test_lr_schedule_warms_up_then_decays() -> None:
+    # 3 warmup steps (10% of 30) then linear decay to ~0 by the last step.
+    torch.manual_seed(0)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+    backbone = _TrainableFakeBackbone(spec, "cpu")
+    head = FCHead(in_dim=8, hidden=None)
+
+    lrs: list[float] = []
+    orig_step = torch.optim.AdamW.step
+
+    def _record_and_step(self: torch.optim.AdamW, *args: object, **kwargs: object) -> object:
+        lrs.append(self.param_groups[0]["lr"])
+        return orig_step(self, *args, **kwargs)
+
+    torch.optim.AdamW.step = _record_and_step  # type: ignore[method-assign]
+    try:
+        train_full_model(
+            cast(TrainableBackbone, backbone),
+            head,
+            _rows(_FakeDataset()),
+            HeadTrainConfig(),
+            FinetuneConfig(epochs=6, batch_size=4, backbone_lr=2e-5, head_lr=2e-5),
+            "cpu",
+        )
+    finally:
+        torch.optim.AdamW.step = orig_step  # type: ignore[method-assign]
+
+    # 20 train rows / batch_size 4 = 5 steps/epoch * 6 epochs = 30 steps total.
+    assert len(lrs) == 30
+    assert lrs[0] < lrs[2] < lrs[3], "LR should ramp up during warmup"
+    assert lrs[-1] < lrs[3], "LR should decay after warmup"
+    assert lrs[-1] < 1e-6, "LR should decay close to 0 by the final step"
+
+
+def test_lr_stop_reports_final_scheduler_lr_and_streams_per_epoch() -> None:
+    torch.manual_seed(0)
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
+    backbone = _TrainableFakeBackbone(spec, "cpu")
+    head = FCHead(in_dim=8, hidden=None)
+
+    streamed_lrs: list[float] = []
+
+    def _cb(epoch: int, train_mse: float, val_mse: float, **extras: float) -> None:
+        streamed_lrs.append(extras["lr"])
+
+    result = train_full_model(
+        cast(TrainableBackbone, backbone),
+        head,
+        _rows(_FakeDataset()),
+        HeadTrainConfig(),
+        FinetuneConfig(epochs=6, batch_size=4, backbone_lr=2e-5, head_lr=2e-5),
+        "cpu",
+        epoch_callback=_cb,
+    )
+
+    assert result.lr_stop is not None
+    assert result.lr_stop < 1e-6, "lr_stop should reflect the near-fully-decayed final LR"
+    assert len(streamed_lrs) == result.epochs_run
+    assert streamed_lrs[-1] == result.lr_stop, "streamed per-epoch lr should end at lr_stop"
+
+
 def test_train_full_model_updates_backbone_params() -> None:
     torch.manual_seed(0)
     spec = ModelSpec(name="fake", hf_repo="local/fake", loader="x", embedding_dim=8)
@@ -269,6 +330,34 @@ def test_finetune_candidate_produces_record(trainable_loader) -> None:
     assert record.timing["inference_s"] == 0.0
     assert record.timing["train_head_s"] > 0.0
     assert record.extras["head_repeats"] == 1
+
+
+def test_finetune_candidate_seed_produces_identical_curves(trainable_loader) -> None:
+    # Real backbones are pretrained (not randomly initialized), so torch.manual_seed(0)
+    # here stands in for that fixed starting point; _TrainableFakeBackbone's nn.Linear
+    # would otherwise draw a different random init on each finetune_candidate call.
+    spec = ModelSpec(name="fake", hf_repo="local/fake", loader="trainable_fake", embedding_dim=8)
+    finetune_config = FinetuneConfig(epochs=3, batch_size=4)
+
+    torch.manual_seed(0)
+    record1 = finetune_candidate(
+        cast(LoadedDataset, _FakeDataset()),
+        spec,
+        device="cpu",
+        finetune_config=finetune_config,
+        seed=42,
+    )
+    torch.manual_seed(0)
+    record2 = finetune_candidate(
+        cast(LoadedDataset, _FakeDataset()),
+        spec,
+        device="cpu",
+        finetune_config=finetune_config,
+        seed=42,
+    )
+
+    assert record1.head_train_curve == record2.head_train_curve
+    assert record1.head_val_curve == record2.head_val_curve
 
 
 def test_finetune_candidate_with_warmup_keeps_timing_contract(trainable_loader) -> None:

@@ -4,7 +4,7 @@
 #SBATCH --mail-user=slack:<YOUR_USERNAME>
 #SBATCH --partition=gpu-batch
 #SBATCH -C ARCH:X86
-#SBATCH --time=14:00:00
+#SBATCH --time=18:00:00
 #SBATCH --gpus=a100:1
 #SBATCH --mem=64G
 #SBATCH --job-name=mlsys-search
@@ -129,6 +129,7 @@ srun --container-name=$CONTAINER_NAME \
        --activation $ACTIVATION \
        --device cuda \
        --head-repeats $HEAD_REPEATS \
+       --standardize-targets \
        --output-dir /workspace/runs/$SLURM_JOB_ID \
        $FINETUNE_ARGS \
        --wandb

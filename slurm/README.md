@@ -34,6 +34,7 @@ DATASET=wine_reviews HIDDEN=512 FINETUNE_LR=1e-5 bash slurm/submit.sh
 | `FINETUNE_LR` | `2e-5` | `--finetune-lr` |
 | `FINETUNE_BATCH_SIZE` | `64` | `--finetune-batch-size` |
 | `GRAD_CLIPPING` | `0` (off) | `--grad-clipping` (max global grad norm in the joint loop; 0 = off, the pre-clip norm is still logged) |
+| `STANDARDIZE_TARGETS` | `1` (on) | `--standardize-targets` / `--no-standardize-targets` (z-score targets on train-split stats, unscale predictions before metrics; `0` when reusing the pipeline for non-regression pilots) |
 | `THROTTLE` | `4` | max concurrent array tasks (`%N`) |
 
 The consolidate job is pure CPU work and runs on `cpu-batch`; only the array tasks occupy GPUs.

@@ -6,7 +6,13 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from mlsys.head import ACTIVATIONS, FCHead, HeadTrainConfig, train_head  # noqa: E402
+from mlsys.head import (  # noqa: E402
+    ACTIVATIONS,
+    FCHead,
+    HeadTrainConfig,
+    target_stats,
+    train_head,
+)
 
 
 @pytest.mark.parametrize(
@@ -93,6 +99,24 @@ def test_train_head_trains_prebuilt_head_in_place() -> None:
     assert any(not torch.equal(b, p) for b, p in zip(before, head.parameters(), strict=True)), (
         "prebuilt head params did not change"
     )
+
+
+def test_target_stats_matches_train_moments() -> None:
+    y = torch.tensor([80.0, 85.0, 90.0, 95.0])
+    mean, std = target_stats(y)
+    assert mean == pytest.approx(87.5)
+    assert std == pytest.approx(float(y.std()))
+
+
+def test_target_stats_guards_degenerate_targets() -> None:
+    # Constant targets (std 0) and single-row splits (std NaN) fall back to std=1.0
+    # so z-scoring degrades to a mean-shift instead of dividing by ~0.
+    mean, std = target_stats(torch.full((10,), 42.0))
+    assert mean == pytest.approx(42.0)
+    assert std == 1.0
+    mean, std = target_stats(torch.tensor([88.0]))
+    assert mean == pytest.approx(88.0)
+    assert std == 1.0
 
 
 def test_seed_produces_identical_initial_weights() -> None:

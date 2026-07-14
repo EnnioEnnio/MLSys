@@ -64,12 +64,14 @@ WARMUP_EPOCHS=${WARMUP_EPOCHS:-2}
 FINETUNE_LR=${FINETUNE_LR:-2e-5}
 FINETUNE_BATCH_SIZE=${FINETUNE_BATCH_SIZE:-64}
 GRAD_CLIPPING=${GRAD_CLIPPING:-0}
+STANDARDIZE_TARGETS=${STANDARDIZE_TARGETS:-1}
 
 echo "Starting mlsys array task"
 echo "Array job: $SLURM_ARRAY_JOB_ID  task: $SLURM_ARRAY_TASK_ID  run id: $RUN_ID"
 echo "Node: $SLURMD_NODENAME"
 echo "Code: $CODE_PATH ($(git -C "$CODE_PATH" log -1 --oneline 2>/dev/null || echo 'git unavailable'))"
 echo "GPU: $CUDA_VISIBLE_DEVICES"
+echo "code at: $(git -C $REPO_PATH log -1 --oneline) ($(git -C $REPO_PATH branch --show-current))"
 nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader
 
 # Step 1: Set up container with dependencies (reuses container across jobs)
@@ -113,10 +115,11 @@ echo "Running model search for task $SLURM_ARRAY_TASK_ID..."
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 export OUT DATASET STRATEGY HIDDEN ACTIVATION HEAD_REPEATS EPOCHS BATCH_SIZE \
-       FINETUNE_EPOCHS WARMUP_EPOCHS FINETUNE_LR FINETUNE_BATCH_SIZE GRAD_CLIPPING
+       FINETUNE_EPOCHS WARMUP_EPOCHS FINETUNE_LR FINETUNE_BATCH_SIZE GRAD_CLIPPING \
+       STANDARDIZE_TARGETS
 srun --container-name=$CONTAINER_NAME \
      --container-mounts=$MOUNTS \
-     --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF,SLURM_ARRAY_TASK_ID,OUT,DATASET,STRATEGY,HIDDEN,ACTIVATION,HEAD_REPEATS,EPOCHS,BATCH_SIZE,FINETUNE_EPOCHS,WARMUP_EPOCHS,FINETUNE_LR,FINETUNE_BATCH_SIZE,GRAD_CLIPPING \
+     --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF,SLURM_ARRAY_TASK_ID,OUT,DATASET,STRATEGY,HIDDEN,ACTIVATION,HEAD_REPEATS,EPOCHS,BATCH_SIZE,FINETUNE_EPOCHS,WARMUP_EPOCHS,FINETUNE_LR,FINETUNE_BATCH_SIZE,GRAD_CLIPPING,STANDARDIZE_TARGETS \
      --container-workdir=/workspace \
      bash -c '
 set -euo pipefail
@@ -126,6 +129,8 @@ MODEL=$(python -m mlsys list-models --index "$SLURM_ARRAY_TASK_ID")
 echo "Task $SLURM_ARRAY_TASK_ID -> $MODEL"
 # results.jsonl is append-only; a retried task must not double-append its fragment.
 rm -f "$OUT/results.jsonl" "$OUT/regret.json"
+# Boolean flag: STANDARDIZE_TARGETS=1 -> --standardize-targets, else --no-standardize-targets.
+if [ "$STANDARDIZE_TARGETS" = 1 ]; then STD_FLAG=--standardize-targets; else STD_FLAG=--no-standardize-targets; fi
 python -m mlsys search \
   --dataset "$DATASET" \
   --strategy "$STRATEGY" \
@@ -140,6 +145,7 @@ python -m mlsys search \
   --finetune-lr "$FINETUNE_LR" \
   --finetune-batch-size "$FINETUNE_BATCH_SIZE" \
   --grad-clipping "$GRAD_CLIPPING" \
+  "$STD_FLAG" \
   --output-dir "$OUT" \
   --wandb
 '

@@ -72,6 +72,12 @@ class HeadTrainConfig:
     early_stop_patience: int = 3
     min_delta: float = 1e-3
     hidden: int | None = None
+    # Z-score targets on train-split stats before head / joint training, unscaling
+    # predictions before metrics (issue #32). On for the regression recipe; turn off
+    # when reusing the pipeline for tasks whose targets shouldn't be rescaled
+    # (e.g. the summarization pilot). Read by the trainers' callers — ``train_head``
+    # itself always takes targets as given.
+    standardize_targets: bool = True
     # Nonlinearity between the MLP head's two layers; ignored by the linear probe
     # (hidden None/<=0), which has no activation.
     activation: str = "relu"
@@ -95,6 +101,26 @@ class HeadTrainResult:
     # head trainer, which doesn't clip.
     grad_norm_curve: list[float] = field(default_factory=list)
     grad_norm_max_curve: list[float] = field(default_factory=list)
+    # Train-target z-scoring stats (issue #32) when the trainer standardized targets
+    # itself (the finetune joint loop); callers must map predictions back with
+    # ``pred * target_std + target_mean`` before computing metrics. The identity
+    # (0, 1) means the trainer saw targets as given — ``train_head`` never
+    # standardizes; in the frozen path the caller does it around the call.
+    target_mean: float = 0.0
+    target_std: float = 1.0
+
+
+def target_stats(y_train: torch.Tensor) -> tuple[float, float]:
+    """Mean/std of the train-split targets for z-scoring (issue #32).
+
+    Std falls back to 1.0 for (near-)constant targets and single-row splits — the
+    transform degrades to a plain mean-shift instead of dividing by ~0.
+    """
+    mean = float(y_train.mean())
+    std = float(y_train.std()) if y_train.numel() > 1 else 0.0
+    if std <= 1e-8:
+        std = 1.0
+    return mean, std
 
 
 def _iter_minibatches(

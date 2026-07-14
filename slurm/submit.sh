@@ -29,6 +29,7 @@ export WARMUP_EPOCHS=${WARMUP_EPOCHS:-2}               # head-only warmup epochs
 export FINETUNE_LR=${FINETUNE_LR:-2e-5}                # backbone learning rate
 export FINETUNE_BATCH_SIZE=${FINETUNE_BATCH_SIZE:-64}  # joint-loop batch size
 export GRAD_CLIPPING=${GRAD_CLIPPING:-0}               # joint-loop max grad norm; 0 = off (norm still logged)
+export STANDARDIZE_TARGETS=${STANDARDIZE_TARGETS:-1}   # z-score targets on train stats; 0 = off (non-regression pilots)
 
 # --- SLURM shape ---
 THROTTLE=${THROTTLE:-4}          # max concurrent array tasks (%N)
@@ -69,6 +70,7 @@ esac
 echo "Submitting array over $N models (0-$((N - 1)), throttle %$THROTTLE)"
 echo "  dataset=$DATASET strategy=$STRATEGY hidden=$HIDDEN activation=$ACTIVATION head_repeats=$HEAD_REPEATS epochs=$EPOCHS batch_size=$BATCH_SIZE"
 echo "  finetune: epochs=$FINETUNE_EPOCHS warmup_epochs=$WARMUP_EPOCHS lr=$FINETUNE_LR batch_size=$FINETUNE_BATCH_SIZE grad_clipping=$GRAD_CLIPPING"
+echo "  standardize_targets=$STANDARDIZE_TARGETS"
 if [ "$STRATEGY" != "full_eval" ]; then
   echo "  strategy=$STRATEGY is not full_eval: consolidation will run with --allow-partial (no regret.json)"
 fi

@@ -169,9 +169,7 @@ def test_grad_clipping_reaches_finetune_config(extra_args, expected, tmp_path, m
     assert captured["grad_clipping"] == expected
 
 
-@pytest.mark.parametrize("extra_args,expected", [([], "relu"), (["--activation", "gelu"], "gelu")])
-def test_activation_reaches_head_config(extra_args, expected, tmp_path, monkeypatch) -> None:
-    # --activation threads through to run_strategy's head_config; default is relu.
+def _capture_head_config(monkeypatch, field: str, args: list[str]) -> object:
     import sys
 
     cli_main = sys.modules["mlsys.cli.main"]
@@ -179,12 +177,47 @@ def test_activation_reaches_head_config(extra_args, expected, tmp_path, monkeypa
     monkeypatch.setattr(cli_main, "load_dataset", lambda name: object())
 
     def fake_run_strategy(name, dataset, **kwargs):
-        captured["activation"] = kwargs["head_config"].activation
+        captured[field] = getattr(kwargs["head_config"], field)
         return []
 
     monkeypatch.setattr(cli_main, "run_strategy", fake_run_strategy)
 
-    rc = main(
+    assert main(args) == 0
+    return captured[field]
+
+
+@pytest.mark.parametrize(
+    "extra_args,expected",
+    [([], True), (["--no-standardize-targets"], False), (["--standardize-targets"], True)],
+)
+def test_standardize_targets_reaches_head_config(
+    extra_args, expected, tmp_path, monkeypatch
+) -> None:
+    # --[no-]standardize-targets threads through to run_strategy's head_config;
+    # default is on (regression recipe, issue #32).
+    got = _capture_head_config(
+        monkeypatch,
+        "standardize_targets",
+        [
+            "search",
+            "--dataset",
+            "wine_reviews",
+            "--strategy",
+            "frozen",
+            "--output-dir",
+            str(tmp_path / "run"),
+            *extra_args,
+        ],
+    )
+    assert got is expected
+
+
+@pytest.mark.parametrize("extra_args,expected", [([], "relu"), (["--activation", "gelu"], "gelu")])
+def test_activation_reaches_head_config(extra_args, expected, tmp_path, monkeypatch) -> None:
+    # --activation threads through to run_strategy's head_config; default is relu.
+    got = _capture_head_config(
+        monkeypatch,
+        "activation",
         [
             "search",
             "--dataset",
@@ -194,10 +227,9 @@ def test_activation_reaches_head_config(extra_args, expected, tmp_path, monkeypa
             "--output-dir",
             str(tmp_path / "run"),
             *extra_args,
-        ]
+        ],
     )
-    assert rc == 0
-    assert captured["activation"] == expected
+    assert got == expected
 
 
 def test_unknown_activation_exits_nonzero() -> None:

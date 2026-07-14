@@ -33,13 +33,12 @@ pair. The table below is computed straight from the CSVs in `results/activation_
 
 | activation | mean r² | std | mean spearman | proxy top-1 |
 | --- | --- | --- | --- | --- |
-| relu | | | | |
-| gelu | | | | |
-| tanh | | | | |
-| silu | | | | |
+| gelu | 0.6853 | 0.0799 | 0.8230 | roberta-base |
+| relu | 0.6547 | 0.0604 | 0.8043 | mxbai-embed-large-v1 |
+| silu | 0.6717 | 0.0900 | 0.8152 | e5-base-v2 |
+| tanh | 0.7159 | 0.0613 | 0.8396 | modernbert-embed-base |
 
-**Does the ranking move?** TODO — pairwise Spearman correlation between the arms' proxy rankings,
-and whether the top-1/top-3 picks change.
+**Does the ranking move?** pairwise Spearman rho over per-model r2 ranks ranges [0.374, 0.691]; proxy top-1 **changes** across activations: gelu=roberta-base, relu=mxbai-embed-large-v1, silu=e5-base-v2, tanh=modernbert-embed-base.
 
 ## Conclusion
 

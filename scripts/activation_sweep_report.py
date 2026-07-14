@@ -167,7 +167,7 @@ def _patch_doc(summary: pd.DataFrame, corr: pd.DataFrame, note: str) -> None:
     if n != 1:
         raise ValueError("could not find the sweep table in docs/head-activation.md to patch")
 
-    move_re = re.compile(r"\*\*Does the ranking move\?\*\* .*")
+    move_re = re.compile(r"\*\*Does the ranking move\?\*\*.*?(?=\n\n)", re.DOTALL)
     text, n = move_re.subn(f"**Does the ranking move?** {note}", text)
     if n != 1:
         raise ValueError("could not find the 'Does the ranking move?' line to patch")

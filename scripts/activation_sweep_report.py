@@ -17,7 +17,8 @@ underscore-delimited token in the stem (e.g. "..._relu.csv" or "relu_..._frozen.
 
 Usage:
     uv run python scripts/activation_sweep_report.py results/activation_sweep
-    uv run python scripts/activation_sweep_report.py results/activation_sweep --activations relu,gelu,tanh,silu
+    uv run python scripts/activation_sweep_report.py results/activation_sweep \
+        --activations relu,gelu,tanh,silu
     uv run python scripts/activation_sweep_report.py results/activation_sweep --update-doc
 """
 
@@ -119,9 +120,7 @@ def rank_agreement(frames: dict[str, pd.DataFrame]) -> pd.DataFrame:
 
 def _ranking_move_note(summary: pd.DataFrame, corr: pd.DataFrame) -> str:
     activations = list(corr.columns)
-    off_diag = [
-        corr.loc[a, b] for a in activations for b in activations if a != b
-    ]
+    off_diag = [corr.loc[a, b] for a in activations for b in activations if a != b]
     min_rho, max_rho = min(off_diag), max(off_diag)
     top1s = summary["proxy_top1"]
     top1_stable = top1s.nunique() == 1
@@ -141,7 +140,9 @@ def _to_markdown(df: pd.DataFrame, float_format: str = "{:.4f}") -> str:
     for col in formatted.columns:
         if formatted[col].dtype.kind in "fc":
             formatted[col] = formatted[col].map(float_format.format)
-    header = "| " + " | ".join([formatted.index.name or ""] + list(formatted.columns)) + " |"
+    index_name = str(formatted.index.name) if formatted.index.name else ""
+    columns = [str(c) for c in formatted.columns]
+    header = "| " + " | ".join([index_name, *columns]) + " |"
     sep = "| " + " | ".join(["---"] * (len(formatted.columns) + 1)) + " |"
     lines = [header, sep]
     for idx, row in formatted.iterrows():
@@ -194,7 +195,10 @@ def _render_report(
 ) -> str:
     parts = [f"# Activation sweep report ({directory})\n", "## Summary\n", _to_markdown(summary)]
     if include_ranks:
-        parts += ["\n## Per-model ranking (1 = best r2 within that activation)\n", _ranks_markdown(frames)]
+        parts += [
+            "\n## Per-model ranking (1 = best r2 within that activation)\n",
+            _ranks_markdown(frames),
+        ]
     parts += [
         "\n## Pairwise Spearman (model r2 rank agreement)\n",
         _to_markdown(corr, float_format="{:.3f}"),
@@ -204,12 +208,15 @@ def _render_report(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument("directory", type=Path, help="folder of per-activation frozen CSVs")
     parser.add_argument(
         "--activations",
         default=",".join(DEFAULT_ACTIVATIONS),
-        help=f"comma-separated activation names to look for (default: {','.join(DEFAULT_ACTIVATIONS)})",
+        help=(
+            "comma-separated activation names to look for "
+            f"(default: {','.join(DEFAULT_ACTIVATIONS)})"
+        ),
     )
     parser.add_argument(
         "--update-doc",

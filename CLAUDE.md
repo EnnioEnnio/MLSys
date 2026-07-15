@@ -120,8 +120,10 @@ in via `can_finetune=True` on its adapter — model2vec is `False`). To add a mo
 train/val/test) can instead set `base_split` + `shuffle_seed`; in that mode
 `splits` values are plain row counts (not HF slice strings), and the loader
 loads `base_split` once, shuffles it with the fixed seed, then slices off
-`train`/`val`/`test` in that order — deterministic and non-overlapping across
-runs (e.g. `usa_real_estate`).
+`train`/`val`/`test` in that fixed order (regardless of YAML key order) —
+non-overlapping and deterministic across runs *for a pinned `datasets`
+version*; HF's shuffle isn't guaranteed stable across library versions, so
+keep local and cluster envs in sync (e.g. `usa_real_estate`).
 
 ## Conventions
 

@@ -11,6 +11,7 @@
 - name: usa_real_estate
   hf_repo: jason1966/ahmedshahriarsakib_usa-real-estate-dataset
   base_split: train
+  # shuffle is only deterministic for a pinned `datasets` version — keep envs in sync
   shuffle_seed: 42
   splits:
     train: "196630"

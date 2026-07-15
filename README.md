@@ -92,6 +92,7 @@ python -m mlsys search --dataset wine_reviews                # linear head (defa
 
 - Append one row to `config/datasets.yaml` with `name`, `hf_repo`, `splits` (logical → HF split name), `target_column`, `target_type: regression`, and a `text_template` Python format string.
 - Missing or `None` columns referenced in the template render as `"unknown"`, so partial-row datasets don't crash.
+- Datasets that ship only one physical HF split (e.g. `usa_real_estate`, a single ordered CSV) can set `base_split` + `shuffle_seed`; then `splits` values are plain row counts, and the loader shuffles the base split once with the fixed seed and slices train/val/test off the top — deterministic and non-overlapping (for a pinned `datasets` version; keep local and cluster envs in sync).
 - If the HF dataset needs custom parsing (filtering, column synthesis), add a loader module under `src/mlsys/datasets/`.
 
 ## Running on the cluster

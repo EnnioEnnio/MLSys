@@ -11,7 +11,7 @@ from pathlib import Path
 from mlsys.datasets import load_dataset
 from mlsys.datasets.registry import load_specs as load_dataset_specs
 from mlsys.finetune import FinetuneConfig
-from mlsys.head import HeadTrainConfig
+from mlsys.head import ACTIVATIONS, HeadTrainConfig
 from mlsys.models.registry import load_specs as load_model_specs
 from mlsys.search.full_eval import STRATEGIES, run_strategy
 
@@ -88,9 +88,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "hidden-layer width of the head. Omit or 0 -> linear probe "
             "(in_dim -> 1). A positive value builds a 2-layer MLP "
-            "(in_dim -> WIDTH -> ReLU -> 1); WIDTH is the size of that "
+            "(in_dim -> WIDTH -> ACT -> 1); WIDTH is the size of that "
             "intermediate layer (more units = more capacity)."
         ),
+    )
+    search.add_argument(
+        "--activation",
+        default=HeadTrainConfig.activation,
+        choices=sorted(ACTIVATIONS),
+        help="activation between the two layers of the MLP head "
+        "(ignored for the linear probe, i.e. --hidden 0/omitted; default: %(default)s)",
     )
     search.add_argument("--device", default=None, help="cpu|cuda; default auto-detect")
     search.add_argument(
@@ -135,6 +142,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "(0 = off; the pre-clip norm is measured and logged either way, "
         "default: %(default)s)",
     )
+    search.add_argument(
+        "--standardize-targets",
+        action=argparse.BooleanOptionalAction,
+        default=HeadTrainConfig.standardize_targets,
+        help="z-score targets on train-split stats for head/joint training, unscaling "
+        "predictions before metrics (regression recipe, issue #32); pass "
+        "--no-standardize-targets when reusing the pipeline for tasks whose targets "
+        "shouldn't be rescaled (default: %(default)s)",
+    )
     search.add_argument("--wandb", action="store_true", help="opt-in W&B logging")
     search.add_argument(
         "--cache-embeddings",
@@ -164,6 +180,14 @@ def _build_parser() -> argparse.ArgumentParser:
     consolidate.add_argument(
         "run_dir",
         help="experiment dir holding the *_task_* fragment dirs (runs/<ARRAY_JOB_ID>)",
+    )
+    consolidate.add_argument(
+        "--strategy",
+        default="full_eval",
+        choices=STRATEGIES,
+        help="strategy the array ran with; shapes the exported run name/config. "
+        "Only full_eval writes both frozen+finetune rows, so any other strategy "
+        "implies --allow-partial (default: %(default)s)",
     )
     consolidate.add_argument(
         "--hidden",
@@ -317,6 +341,7 @@ def _run_consolidate(args: argparse.Namespace) -> int:
 
     result = consolidate_run(
         args.run_dir,
+        strategy=args.strategy,
         hidden=args.hidden,
         cleanup=args.cleanup,
         allow_partial=args.allow_partial,
@@ -340,7 +365,7 @@ def _run_consolidate(args: argparse.Namespace) -> int:
             name=result.run_name,
             config={
                 "dataset": result.dataset,
-                "strategy": "full_eval",
+                "strategy": result.strategy,
                 "hidden": args.hidden,
                 "consolidated_from": args.run_dir,
             },
@@ -398,7 +423,13 @@ def _run_search(args: argparse.Namespace) -> int:
 
     dataset = load_dataset(args.dataset)
     model_names = [m.strip() for m in args.models.split(",")] if args.models else None
-    head_cfg = HeadTrainConfig(epochs=args.epochs, batch_size=args.batch_size, hidden=args.hidden)
+    head_cfg = HeadTrainConfig(
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        hidden=args.hidden,
+        standardize_targets=args.standardize_targets,
+        activation=args.activation,
+    )
     finetune_cfg = FinetuneConfig(
         epochs=args.finetune_epochs,
         batch_size=args.finetune_batch_size,
@@ -426,6 +457,8 @@ def _run_search(args: argparse.Namespace) -> int:
                 "batch_size": args.batch_size,
                 "device": device,
                 "hidden": head_cfg.hidden,
+                "standardize_targets": head_cfg.standardize_targets,
+                "activation": head_cfg.activation,
                 "finetune_epochs": finetune_cfg.epochs,
                 "finetune_batch_size": finetune_cfg.batch_size,
                 "finetune_backbone_lr": finetune_cfg.backbone_lr,

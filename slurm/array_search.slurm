@@ -11,10 +11,12 @@
 #SBATCH --output=slurm-mlsys-array-%A_%a.out
 #SBATCH --array=0-15%4
 
-# SLURM job array: one model per task, `--strategy full_eval` each, so a slow or
-# OOM-ing model only costs its own task. Fragments land in
-# runs/<ARRAY_JOB_ID>/<ARRAY_JOB_ID>_task_<n>/; the dependent consolidate.slurm
-# merges them and recomputes regret.json (see slurm/README.md).
+# SLURM job array: one model per task, `--strategy $STRATEGY` each (default
+# full_eval), so a slow or OOM-ing model only costs its own task. Fragments land
+# in runs/<ARRAY_JOB_ID>/<ARRAY_JOB_ID>_task_<n>/; the dependent consolidate.slurm
+# merges them. Only full_eval produces both frozen+finetune rows, so only
+# full_eval gets a regret.json — frozen/finetune-only arrays are merged with
+# --allow-partial by consolidate.slurm (see slurm/README.md).
 #
 # --array bound = pool size - 1. Don't hand-edit it: submit via `bash slurm/submit.sh`,
 # which derives the bound from `mlsys list-models --count` (the same load_specs()
@@ -24,7 +26,8 @@
 # experiment dir explicitly (and repeat any non-default search knobs). Add
 # CODE_PATH=<snapshot path> to run the retry on the original run's pinned code
 # (the snapshot survives failed runs); without it the retry uses the live checkout.
-#   sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,HIDDEN=<same> slurm/array_search.slurm
+#   sbatch --array=3,7 --export=ALL,RUN_ID=<orig_id>,STRATEGY=<same>,HIDDEN=<same> \
+#     slurm/array_search.slurm
 # IMPORTANT: Update the REPO_PATH default below to match your cluster checkout path.
 # NOTE: Excludes V100 GPUs (CUDA 7.0) since PyTorch 25.03 requires CUDA capability >= 7.5.
 
@@ -50,7 +53,9 @@ OUT=/workspace/runs/${RUN_ID}/${RUN_ID}_task_${SLURM_ARRAY_TASK_ID}
 # it exports them to every task via --export=ALL); the defaults here mirror
 # submit.sh's and only cover direct sbatch retries.
 DATASET=${DATASET:-wine_reviews}
+STRATEGY=${STRATEGY:-full_eval}
 HIDDEN=${HIDDEN:-256}
+ACTIVATION=${ACTIVATION:-relu}
 HEAD_REPEATS=${HEAD_REPEATS:-1}
 EPOCHS=${EPOCHS:-30}
 BATCH_SIZE=${BATCH_SIZE:-64}
@@ -59,12 +64,14 @@ WARMUP_EPOCHS=${WARMUP_EPOCHS:-2}
 FINETUNE_LR=${FINETUNE_LR:-2e-5}
 FINETUNE_BATCH_SIZE=${FINETUNE_BATCH_SIZE:-64}
 GRAD_CLIPPING=${GRAD_CLIPPING:-0}
+STANDARDIZE_TARGETS=${STANDARDIZE_TARGETS:-1}
 
 echo "Starting mlsys array task"
 echo "Array job: $SLURM_ARRAY_JOB_ID  task: $SLURM_ARRAY_TASK_ID  run id: $RUN_ID"
 echo "Node: $SLURMD_NODENAME"
 echo "Code: $CODE_PATH ($(git -C "$CODE_PATH" log -1 --oneline 2>/dev/null || echo 'git unavailable'))"
 echo "GPU: $CUDA_VISIBLE_DEVICES"
+echo "code at: $(git -C $REPO_PATH log -1 --oneline) ($(git -C $REPO_PATH branch --show-current))"
 nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader
 
 # Step 1: Set up container with dependencies (reuses container across jobs)
@@ -107,11 +114,12 @@ echo "Running model search for task $SLURM_ARRAY_TASK_ID..."
 # locking fixed-size blocks (see search.slurm for the full rationale).
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-export OUT DATASET HIDDEN HEAD_REPEATS EPOCHS BATCH_SIZE \
-       FINETUNE_EPOCHS WARMUP_EPOCHS FINETUNE_LR FINETUNE_BATCH_SIZE GRAD_CLIPPING
+export OUT DATASET STRATEGY HIDDEN ACTIVATION HEAD_REPEATS EPOCHS BATCH_SIZE \
+       FINETUNE_EPOCHS WARMUP_EPOCHS FINETUNE_LR FINETUNE_BATCH_SIZE GRAD_CLIPPING \
+       STANDARDIZE_TARGETS
 srun --container-name=$CONTAINER_NAME \
      --container-mounts=$MOUNTS \
-     --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF,SLURM_ARRAY_TASK_ID,OUT,DATASET,HIDDEN,HEAD_REPEATS,EPOCHS,BATCH_SIZE,FINETUNE_EPOCHS,WARMUP_EPOCHS,FINETUNE_LR,FINETUNE_BATCH_SIZE,GRAD_CLIPPING \
+     --container-env=WANDB_API_KEY,PYTORCH_CUDA_ALLOC_CONF,SLURM_ARRAY_TASK_ID,OUT,DATASET,STRATEGY,HIDDEN,ACTIVATION,HEAD_REPEATS,EPOCHS,BATCH_SIZE,FINETUNE_EPOCHS,WARMUP_EPOCHS,FINETUNE_LR,FINETUNE_BATCH_SIZE,GRAD_CLIPPING,STANDARDIZE_TARGETS \
      --container-workdir=/workspace \
      bash -c '
 set -euo pipefail
@@ -121,11 +129,14 @@ MODEL=$(python -m mlsys list-models --index "$SLURM_ARRAY_TASK_ID")
 echo "Task $SLURM_ARRAY_TASK_ID -> $MODEL"
 # results.jsonl is append-only; a retried task must not double-append its fragment.
 rm -f "$OUT/results.jsonl" "$OUT/regret.json"
+# Boolean flag: STANDARDIZE_TARGETS=1 -> --standardize-targets, else --no-standardize-targets.
+if [ "$STANDARDIZE_TARGETS" = 1 ]; then STD_FLAG=--standardize-targets; else STD_FLAG=--no-standardize-targets; fi
 python -m mlsys search \
   --dataset "$DATASET" \
-  --strategy full_eval \
+  --strategy "$STRATEGY" \
   --models "$MODEL" \
   --hidden "$HIDDEN" \
+  --activation "$ACTIVATION" \
   --head-repeats "$HEAD_REPEATS" \
   --epochs "$EPOCHS" \
   --batch-size "$BATCH_SIZE" \
@@ -134,6 +145,7 @@ python -m mlsys search \
   --finetune-lr "$FINETUNE_LR" \
   --finetune-batch-size "$FINETUNE_BATCH_SIZE" \
   --grad-clipping "$GRAD_CLIPPING" \
+  "$STD_FLAG" \
   --output-dir "$OUT" \
   --wandb
 '

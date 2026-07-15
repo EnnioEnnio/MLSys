@@ -52,12 +52,13 @@ class ConsolidationResult:
     """What :func:`consolidate_run` produced (paths are ``None`` when skipped)."""
 
     dataset: str
+    strategy: str
     run_name: str
     rows: list[dict[str, Any]]  # frozen block then finetune block, registry order
     results_path: Path
     regret_path: Path | None  # None with allow_partial on an incomplete pool
     summary: RegretSummary | None
-    csv_paths: list[Path]
+    csv_paths: list[Path]  # empty pass CSVs are skipped, so this may have < 3 entries
 
 
 def flatten_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -84,6 +85,7 @@ def flatten_row(row: dict[str, Any]) -> dict[str, Any]:
 def consolidate_run(
     run_dir: str | Path,
     *,
+    strategy: str = "full_eval",
     hidden: int | None = None,
     cleanup: bool = False,
     allow_partial: bool = False,
@@ -96,12 +98,18 @@ def consolidate_run(
     row order and proxy-ranking tie-break exactly. ``hidden`` only shapes the exported
     run name's head token (``FCH`` / ``MLP_<w>``).
 
+    ``strategy`` is the array's ``--strategy`` (default ``full_eval``) and drives the
+    exported run name + W&B config, exactly as a single-node run would name itself. Only
+    ``full_eval`` writes both frozen+finetune rows, so any other strategy implies
+    ``allow_partial`` (no regret.json — there's nothing to compute it against).
+
     With no fragments, falls back to an already-consolidated ``<run_dir>/results.jsonl``
     (idempotent after ``cleanup``); raises if neither exists. An incomplete pool
     (frozen/finetune model sets differ) raises unless ``allow_partial``, which merges
     but skips regret. ``cleanup`` removes the task dirs after all writes succeed.
     """
     run_dir = Path(run_dir)
+    allow_partial = allow_partial or strategy != "full_eval"
     rows = _load_fragment_rows(run_dir)
     dataset = _single_dataset(rows)
     rows = _dedupe_and_order(rows)
@@ -130,16 +138,20 @@ def consolidate_run(
     else:
         log.warning("skipping regret.json: missing rows for %s", missing)
 
-    # The run name mirrors a single-node full_eval run so the exported CSVs drop
-    # straight into a results/<experiment>/ folder with zero renaming.
+    # The run name mirrors a single-node run of the same strategy so the exported CSVs
+    # drop straight into a results/<experiment>/ folder with zero renaming.
     from mlsys.cli.main import _wandb_run_name
 
     n_models = len({r["model"] for r in rows})
-    run_name = _wandb_run_name(run_dir.name, dataset, "full_eval", n_models, hidden)
+    run_name = _wandb_run_name(run_dir.name, dataset, strategy, n_models, hidden)
 
     csv_paths = [
-        _write_pass_csv(run_dir / f"{run_name}_frozen.csv", frozen),
-        _write_pass_csv(run_dir / f"{run_name}_finetune.csv", finetune),
+        path
+        for path in (
+            _write_pass_csv(run_dir / f"{run_name}_frozen.csv", frozen),
+            _write_pass_csv(run_dir / f"{run_name}_finetune.csv", finetune),
+        )
+        if path is not None
     ]
     if summary is not None:
         csv_paths.append(_write_regret_csv(run_dir / f"{run_name}_regret.csv", summary))
@@ -151,6 +163,7 @@ def consolidate_run(
 
     return ConsolidationResult(
         dataset=dataset,
+        strategy=strategy,
         run_name=run_name,
         rows=rows,
         results_path=results_path,
@@ -248,10 +261,18 @@ def _write_results_jsonl(run_dir: Path, rows: list[dict[str, Any]]) -> Path:
     return path
 
 
-def _write_pass_csv(path: Path, rows: list[dict[str, Any]]) -> Path:
-    """One pass's rows as CSV, columns from the first row (the W&B table layout)."""
+def _write_pass_csv(path: Path, rows: list[dict[str, Any]]) -> Path | None:
+    """One pass's rows as CSV, columns from the first row (the W&B table layout).
+
+    Skips writing entirely when ``rows`` is empty (a partial-strategy array run only
+    ever populates one side of the frozen/finetune pair) — a header-less, row-less CSV
+    would still glob-match in ``analysis/loader.py`` and blow up ``pd.read_csv`` with
+    ``EmptyDataError``.
+    """
+    if not rows:
+        return None
     flat = [flatten_row(r) for r in rows]
-    columns = list(flat[0].keys()) if flat else []
+    columns = list(flat[0].keys())
     with path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=columns, extrasaction="ignore", restval="")
         writer.writeheader()

@@ -7,7 +7,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from mlsys.datasets.registry import DatasetSpec, get_spec, load_specs
+from mlsys.datasets.registry import REQUIRED_SPLITS, DatasetSpec, get_spec, load_specs
 
 log = logging.getLogger(__name__)
 
@@ -110,11 +110,22 @@ def load_dataset(name: str) -> LoadedDataset:
         assert spec.base_split is not None  # enforced together by load_specs()
         base = hf_load_dataset(spec.hf_repo, split=spec.base_split)
         base = base.shuffle(seed=spec.shuffle_seed)
+        total = sum(int(spec.splits[s]) for s in REQUIRED_SPLITS)
+        if total > len(base):
+            raise ValueError(
+                f"dataset {spec.name!r}: split row counts sum to {total} but base split "
+                f"{spec.base_split!r} has only {len(base)} rows"
+            )
         offset = 0
-        for logical, count_str in spec.splits.items():
-            count = int(count_str)
+        # Slice in REQUIRED_SPLITS order (not YAML key order) so split membership
+        # can't change if the YAML keys are reordered.
+        for logical in REQUIRED_SPLITS:
+            count = int(spec.splits[logical])
+            # flatten_indices() rewrites the slice contiguously; without it every
+            # per-candidate iteration random-accesses the full shuffled base table.
             splits[logical] = _SplitView(
-                spec=spec, hf_split=base.select(range(offset, offset + count))
+                spec=spec,
+                hf_split=base.select(range(offset, offset + count)).flatten_indices(),
             )
             offset += count
     else:

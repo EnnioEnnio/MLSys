@@ -72,3 +72,47 @@ def test_shuffled_splits_are_deterministic_for_same_seed(
     first_train_order = [row["text"] for row in first.split("train").hf_split]
     second_train_order = [row["text"] for row in second.split("train").hf_split]
     assert first_train_order == second_train_order
+
+
+def test_shuffled_split_membership_ignores_yaml_key_order(
+    monkeypatch: pytest.MonkeyPatch, shuffled_spec_path: Path, tmp_path: Path
+) -> None:
+    reordered = tmp_path / "datasets_reordered.yaml"
+    reordered.write_text(
+        "- name: shuffled\n  hf_repo: fake/repo\n  base_split: train\n  shuffle_seed: 7\n"
+        "  splits:\n    test: '200'\n    val: '100'\n    train: '700'\n"
+        '  target_column: y\n  target_type: regression\n  text_template: "{text}"\n'
+    )
+    monkeypatch.setattr("datasets.load_dataset", lambda repo, split: _fake_dataset())
+
+    def _load(cfg: Path) -> datasets_module.LoadedDataset:
+        monkeypatch.setattr(
+            datasets_module, "get_spec", lambda name: datasets_module.load_specs(cfg)[name]
+        )
+        return datasets_module.load_dataset("shuffled")
+
+    canonical = _load(shuffled_spec_path)
+    shuffled_keys = _load(reordered)
+
+    for split in ("train", "val", "test"):
+        canonical_texts = [row["text"] for row in canonical.split(split).hf_split]
+        reordered_texts = [row["text"] for row in shuffled_keys.split(split).hf_split]
+        assert canonical_texts == reordered_texts
+
+
+def test_shuffled_splits_reject_counts_exceeding_base_split(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cfg = tmp_path / "datasets_too_big.yaml"
+    cfg.write_text(
+        "- name: shuffled\n  hf_repo: fake/repo\n  base_split: train\n  shuffle_seed: 7\n"
+        "  splits:\n    train: '900'\n    val: '100'\n    test: '200'\n"
+        '  target_column: y\n  target_type: regression\n  text_template: "{text}"\n'
+    )
+    monkeypatch.setattr(
+        datasets_module, "get_spec", lambda name: datasets_module.load_specs(cfg)[name]
+    )
+    monkeypatch.setattr("datasets.load_dataset", lambda repo, split: _fake_dataset())
+
+    with pytest.raises(ValueError, match="has only"):
+        datasets_module.load_dataset("shuffled")

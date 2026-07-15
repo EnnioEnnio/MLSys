@@ -124,3 +124,48 @@ def test_datasets_yaml_rejects_missing_split(tmp_path) -> None:
     )
     with pytest.raises(ValueError, match="missing split"):
         load_dataset_specs(bad)
+
+
+def test_datasets_yaml_rejects_shuffle_seed_without_base_split(tmp_path) -> None:
+    bad = tmp_path / "datasets.yaml"
+    bad.write_text(
+        "- name: d\n  hf_repo: y/z\n  shuffle_seed: 42\n"
+        "  splits:\n    train: '100'\n    val: '10'\n    test: '10'\n"
+        '  target_column: y\n  target_type: regression\n  text_template: "{x}"\n'
+    )
+    with pytest.raises(ValueError, match="shuffle_seed and base_split"):
+        load_dataset_specs(bad)
+
+
+def test_datasets_yaml_rejects_base_split_without_shuffle_seed(tmp_path) -> None:
+    bad = tmp_path / "datasets.yaml"
+    bad.write_text(
+        "- name: d\n  hf_repo: y/z\n  base_split: train\n"
+        "  splits:\n    train: '100'\n    val: '10'\n    test: '10'\n"
+        '  target_column: y\n  target_type: regression\n  text_template: "{x}"\n'
+    )
+    with pytest.raises(ValueError, match="shuffle_seed and base_split"):
+        load_dataset_specs(bad)
+
+
+def test_datasets_yaml_rejects_non_numeric_split_with_shuffle_seed(tmp_path) -> None:
+    bad = tmp_path / "datasets.yaml"
+    bad.write_text(
+        "- name: d\n  hf_repo: y/z\n  base_split: train\n  shuffle_seed: 42\n"
+        "  splits:\n    train: 'train[:80%]'\n    val: '10'\n    test: '10'\n"
+        '  target_column: y\n  target_type: regression\n  text_template: "{x}"\n'
+    )
+    with pytest.raises(ValueError, match="plain row count"):
+        load_dataset_specs(bad)
+
+
+def test_datasets_yaml_accepts_shuffle_seed_and_base_split(tmp_path) -> None:
+    good = tmp_path / "datasets.yaml"
+    good.write_text(
+        "- name: d\n  hf_repo: y/z\n  base_split: train\n  shuffle_seed: 42\n"
+        "  splits:\n    train: '100'\n    val: '10'\n    test: '10'\n"
+        '  target_column: y\n  target_type: regression\n  text_template: "{x}"\n'
+    )
+    specs = load_dataset_specs(good)
+    assert specs["d"].shuffle_seed == 42
+    assert specs["d"].base_split == "train"

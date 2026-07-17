@@ -138,6 +138,42 @@ def test_warmup_epochs_reaches_finetune_config(extra_args, expected, tmp_path, m
     assert captured["warmup_epochs"] == expected
 
 
+@pytest.mark.parametrize(
+    "extra_args,expected", [([], 3), (["--finetune-early-stop-patience", "7"], 7)]
+)
+def test_finetune_early_stop_patience_reaches_finetune_config(
+    extra_args, expected, tmp_path, monkeypatch
+) -> None:
+    # --finetune-early-stop-patience threads through to run_strategy's finetune_config;
+    # default is 3 (FinetuneConfig.early_stop_patience).
+    import sys
+
+    cli_main = sys.modules["mlsys.cli.main"]
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(cli_main, "load_dataset", lambda name: object())
+
+    def fake_run_strategy(name, dataset, **kwargs):
+        captured["early_stop_patience"] = kwargs["finetune_config"].early_stop_patience
+        return []
+
+    monkeypatch.setattr(cli_main, "run_strategy", fake_run_strategy)
+
+    rc = main(
+        [
+            "search",
+            "--dataset",
+            "wine_reviews",
+            "--strategy",
+            "finetune",
+            "--output-dir",
+            str(tmp_path / "run"),
+            *extra_args,
+        ]
+    )
+    assert rc == 0
+    assert captured["early_stop_patience"] == expected
+
+
 @pytest.mark.parametrize("extra_args,expected", [([], 0.0), (["--grad-clipping", "1.0"], 1.0)])
 def test_grad_clipping_reaches_finetune_config(extra_args, expected, tmp_path, monkeypatch) -> None:
     # --grad-clipping threads through to run_strategy's finetune_config; default is 0 (off).
@@ -224,6 +260,27 @@ def test_activation_reaches_head_config(extra_args, expected, tmp_path, monkeypa
             "wine_reviews",
             "--hidden",
             "256",
+            "--output-dir",
+            str(tmp_path / "run"),
+            *extra_args,
+        ],
+    )
+    assert got == expected
+
+
+@pytest.mark.parametrize("extra_args,expected", [([], 3), (["--early-stop-patience", "5"], 5)])
+def test_early_stop_patience_reaches_head_config(
+    extra_args, expected, tmp_path, monkeypatch
+) -> None:
+    # --early-stop-patience threads through to run_strategy's head_config; default is
+    # 3 (HeadTrainConfig.early_stop_patience).
+    got = _capture_head_config(
+        monkeypatch,
+        "early_stop_patience",
+        [
+            "search",
+            "--dataset",
+            "wine_reviews",
             "--output-dir",
             str(tmp_path / "run"),
             *extra_args,

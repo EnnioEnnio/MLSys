@@ -81,6 +81,14 @@ def _build_parser() -> argparse.ArgumentParser:
     search.add_argument("--epochs", type=int, default=HeadTrainConfig.epochs)
     search.add_argument("--batch-size", type=int, default=64)
     search.add_argument(
+        "--early-stop-patience",
+        type=int,
+        default=HeadTrainConfig.early_stop_patience,
+        metavar="N",
+        help="stop head training after N epochs without a val-MSE improvement "
+        "(default: %(default)s)",
+    )
+    search.add_argument(
         "--hidden",
         type=int,
         default=HeadTrainConfig.hidden,
@@ -141,6 +149,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="clip the finetune/full_eval joint loop's gradients to this global L2 norm "
         "(0 = off; the pre-clip norm is measured and logged either way, "
         "default: %(default)s)",
+    )
+    search.add_argument(
+        "--finetune-early-stop-patience",
+        type=int,
+        default=FinetuneConfig.early_stop_patience,
+        metavar="N",
+        help="stop the finetune/full_eval joint loop after N epochs without a val-MSE "
+        "improvement (default: %(default)s)",
     )
     search.add_argument(
         "--standardize-targets",
@@ -429,6 +445,7 @@ def _run_search(args: argparse.Namespace) -> int:
         hidden=args.hidden,
         standardize_targets=args.standardize_targets,
         activation=args.activation,
+        early_stop_patience=args.early_stop_patience,
     )
     finetune_cfg = FinetuneConfig(
         epochs=args.finetune_epochs,
@@ -436,6 +453,7 @@ def _run_search(args: argparse.Namespace) -> int:
         backbone_lr=args.finetune_lr,
         warmup_epochs=args.warmup_epochs,
         grad_clipping=args.grad_clipping,
+        early_stop_patience=args.finetune_early_stop_patience,
     )
 
     wandb_run = None
@@ -459,11 +477,13 @@ def _run_search(args: argparse.Namespace) -> int:
                 "hidden": head_cfg.hidden,
                 "standardize_targets": head_cfg.standardize_targets,
                 "activation": head_cfg.activation,
+                "early_stop_patience": head_cfg.early_stop_patience,
                 "finetune_epochs": finetune_cfg.epochs,
                 "finetune_batch_size": finetune_cfg.batch_size,
                 "finetune_backbone_lr": finetune_cfg.backbone_lr,
                 "finetune_warmup_epochs": finetune_cfg.warmup_epochs,
                 "finetune_grad_clipping": finetune_cfg.grad_clipping,
+                "finetune_early_stop_patience": finetune_cfg.early_stop_patience,
             },
         )
 

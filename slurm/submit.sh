@@ -24,11 +24,13 @@ export ACTIVATION=${ACTIVATION:-relu}                  # MLP-head activation: re
 export HEAD_REPEATS=${HEAD_REPEATS:-1}                 # frozen-pass head repeats (variance)
 export EPOCHS=${EPOCHS:-30}                            # head epochs
 export BATCH_SIZE=${BATCH_SIZE:-64}                    # encode/head batch size
+export EARLY_STOP_PATIENCE=${EARLY_STOP_PATIENCE:-3}   # head: stop after N epochs with no val-MSE improvement
 export FINETUNE_EPOCHS=${FINETUNE_EPOCHS:-10}          # joint-loop epochs
 export WARMUP_EPOCHS=${WARMUP_EPOCHS:-2}               # head-only warmup epochs before the joint loop; 0 = off
 export FINETUNE_LR=${FINETUNE_LR:-2e-5}                # backbone learning rate
 export FINETUNE_BATCH_SIZE=${FINETUNE_BATCH_SIZE:-64}  # joint-loop batch size
 export GRAD_CLIPPING=${GRAD_CLIPPING:-0}               # joint-loop max grad norm; 0 = off (norm still logged)
+export FINETUNE_EARLY_STOP_PATIENCE=${FINETUNE_EARLY_STOP_PATIENCE:-3}  # joint loop: stop after N epochs with no val-MSE improvement
 export STANDARDIZE_TARGETS=${STANDARDIZE_TARGETS:-1}   # z-score targets on train stats; 0 = off (non-regression pilots)
 
 # --- SLURM shape ---
@@ -68,8 +70,8 @@ case "$STRATEGY" in
 esac
 
 echo "Submitting array over $N models (0-$((N - 1)), throttle %$THROTTLE)"
-echo "  dataset=$DATASET strategy=$STRATEGY hidden=$HIDDEN activation=$ACTIVATION head_repeats=$HEAD_REPEATS epochs=$EPOCHS batch_size=$BATCH_SIZE"
-echo "  finetune: epochs=$FINETUNE_EPOCHS warmup_epochs=$WARMUP_EPOCHS lr=$FINETUNE_LR batch_size=$FINETUNE_BATCH_SIZE grad_clipping=$GRAD_CLIPPING"
+echo "  dataset=$DATASET strategy=$STRATEGY hidden=$HIDDEN activation=$ACTIVATION head_repeats=$HEAD_REPEATS epochs=$EPOCHS batch_size=$BATCH_SIZE early_stop_patience=$EARLY_STOP_PATIENCE"
+echo "  finetune: epochs=$FINETUNE_EPOCHS warmup_epochs=$WARMUP_EPOCHS lr=$FINETUNE_LR batch_size=$FINETUNE_BATCH_SIZE grad_clipping=$GRAD_CLIPPING early_stop_patience=$FINETUNE_EARLY_STOP_PATIENCE"
 echo "  standardize_targets=$STANDARDIZE_TARGETS"
 if [ "$STRATEGY" != "full_eval" ]; then
   echo "  strategy=$STRATEGY is not full_eval: consolidation will run with --allow-partial (no regret.json)"

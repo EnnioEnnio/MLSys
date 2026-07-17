@@ -29,11 +29,13 @@ DATASET=wine_reviews HIDDEN=512 FINETUNE_LR=1e-5 bash slurm/submit.sh
 | `HEAD_REPEATS` | `1` | `--head-repeats` |
 | `EPOCHS` | `30` | `--epochs` |
 | `BATCH_SIZE` | `64` | `--batch-size` |
+| `EARLY_STOP_PATIENCE` | `3` | `--early-stop-patience` (stop head training after N epochs with no val-MSE improvement) |
 | `FINETUNE_EPOCHS` | `10` | `--finetune-epochs` |
 | `WARMUP_EPOCHS` | `2` | `--warmup-epochs` (head-only LP-FT warmup before the joint loop; 0 = off) |
 | `FINETUNE_LR` | `2e-5` | `--finetune-lr` |
 | `FINETUNE_BATCH_SIZE` | `64` | `--finetune-batch-size` |
 | `GRAD_CLIPPING` | `0` (off) | `--grad-clipping` (max global grad norm in the joint loop; 0 = off, the pre-clip norm is still logged) |
+| `FINETUNE_EARLY_STOP_PATIENCE` | `3` | `--finetune-early-stop-patience` (stop the joint loop after N epochs with no val-MSE improvement) |
 | `STANDARDIZE_TARGETS` | `1` (on) | `--standardize-targets` / `--no-standardize-targets` (z-score targets on train-split stats, unscale predictions before metrics; `0` when reusing the pipeline for non-regression pilots) |
 | `THROTTLE` | `4` | max concurrent array tasks (`%N`) |
 

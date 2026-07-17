@@ -110,7 +110,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # they are accepted but ignored by the frozen strategy.
 FINETUNE_ARGS=""
 if [[ "$STRATEGY" == "finetune" || "$STRATEGY" == "full_eval" ]]; then
-  FINETUNE_ARGS="--finetune-epochs 10 --finetune-lr 2e-5 --finetune-batch-size 64 --warmup-epochs 2 --grad-clipping 0"
+  FINETUNE_ARGS="--finetune-epochs 10 --finetune-lr 2e-5 --finetune-batch-size 64 --warmup-epochs 2 --grad-clipping 0 --finetune-early-stop-patience 3"
 fi
 
 # Every value-taking flag is passed explicitly at its standard value so nothing is
@@ -125,6 +125,7 @@ srun --container-name=$CONTAINER_NAME \
        --strategy $STRATEGY \
        --epochs 30 \
        --batch-size 64 \
+       --early-stop-patience 3 \
        --hidden 256 \
        --activation $ACTIVATION \
        --device cuda \

@@ -113,28 +113,3 @@
   pooling: builtin
   embedding_dim: 1024
   max_length: 512
-
-# DISABLED: both custom-arch ("new-impl"/"nomic_bert") checkpoints load fine but
-# their forward pass throws a CUDA device-side assert (index out of bounds), which
-# poisons the CUDA context and kills the whole sweep. Commented out to unblock a
-# clean run of the rest of the pool. Re-enable once root-caused + the runner
-# isolates per-candidate failures. See plan.md.
-# - name: gte-base-en-v1.5
-#   hf_repo: Alibaba-NLP/gte-base-en-v1.5
-#   loader: sentence_transformers
-#   pooling: builtin
-#   embedding_dim: 768
-#   max_length: 512
-#   # Ships a custom architecture (Alibaba-NLP/new-impl) executed at load time.
-#   trust_remote_code: true
-#
-# - name: nomic-embed-text-v1.5
-#   hf_repo: nomic-ai/nomic-embed-text-v1.5
-#   loader: sentence_transformers
-#   pooling: builtin
-#   embedding_dim: 768
-#   max_length: 512
-#   input_prefix: "search_document: "
-#   # Ships a custom architecture (nomic_bert) executed at load time.
-#   trust_remote_code: true
-

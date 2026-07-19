@@ -1,19 +1,21 @@
 """Centralised visual theme — one source of truth for colours, markers, and colormaps.
 
 Every semantic entity (frozen/finetune pass, ok/diverged/skipped status, timing substep,
-delta direction) gets one fixed colour + marker used across *all* plots. Palette sampled
-from the intermediate deck: cream background #F5EFE6, deep burgundy #6B1F2A.
+delta direction, head width) gets one fixed colour + marker used across *all* plots. Palette
+rooted in the intermediate deck's warm tan/burgundy pair (#C9A66B / #6B1F2A) on a plain white
+background.
 
 All constants are module-level (no lazy-import needed — only stdlib types here).
 Heavy matplotlib/seaborn objects (LinearSegmentedColormap) are created inside
 ``get_cmap_r2`` / ``get_binary_cmap`` so the module stays importable without matplotlib.
-``apply_theme(plt, sns)`` is called from ``_setup`` in plots.py.
+``apply_theme(plt, sns)`` is called from ``_setup`` in plots.py (and the side-scripts in
+``scripts/`` that render their own figures).
 """
 
 from __future__ import annotations
 
 # --------------------------------------------------------------------------- palette roots
-BG = "#F5EFE6"  # cream background
+BG = "#FFFFFF"  # white background
 GRID = "#D8CCBB"  # taupe grid lines
 INK = "#3A2A2E"  # body text / axis labels
 
@@ -66,6 +68,35 @@ def get_cmap_r2():
     from matplotlib.colors import LinearSegmentedColormap
 
     return LinearSegmentedColormap.from_list("cmap_r2", [BG, "#6B1F2A"])
+
+
+# Okabe & Ito (2008) categorical palette — the standard colorblind-safe choice for scientific
+# plots with several *unordered* categories (used for head-indexed lines/bars). A single-hue
+# lightness ramp (the old tan->burgundy interpolation) reads fine as a legend swatch but
+# collapses into near-identical greys/browns once several lines overlap on the same axes, so
+# head-indexed plots use this instead of PASS_COLORS. Ordered by on-white contrast; yellow is
+# last because it's the one Okabe-Ito colour that's hard to see on a white background.
+HEAD_PALETTE: list[str] = [
+    "#0072B2",  # blue
+    "#D55E00",  # vermillion
+    "#009E73",  # bluish green
+    "#CC79A7",  # reddish purple
+    "#E69F00",  # orange
+    "#56B4E9",  # sky blue
+    "#000000",  # black
+    "#F0E442",  # yellow
+]
+HEAD_MARKERS: list[str] = ["o", "s", "^", "D", "v", "P", "X", "*"]
+
+
+def get_head_colors(n: int) -> list[str]:
+    """First ``n`` colours of the Okabe-Ito palette (cycles if ``n`` exceeds its length)."""
+    return [HEAD_PALETTE[i % len(HEAD_PALETTE)] for i in range(n)]
+
+
+def get_head_markers(n: int) -> list[str]:
+    """First ``n`` markers paired 1:1 with :func:`get_head_colors` (colour + shape encoding)."""
+    return [HEAD_MARKERS[i % len(HEAD_MARKERS)] for i in range(n)]
 
 
 def get_binary_cmap():

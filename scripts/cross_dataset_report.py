@@ -225,7 +225,12 @@ def plot_rank_survival(survival: pd.DataFrame, out: Path) -> None:
         ("tiny_fz_vs_tiny_ft", "tiny frozen ↔ tiny finetune"),
         ("full_fz_vs_full_ft", "full frozen ↔ full finetune"),
     ]
-    colors = ["#C9A66B", "#8C3340", "#B5604E", "#4A5A6A"]
+    colors = [
+        theme.PASS_COLORS["frozen"],
+        theme.SUBSTEP_COLORS[3],
+        theme.SUBSTEP_COLORS[2],
+        theme.STATUS_COLORS["ok"],
+    ]
     fig, ax = plt.subplots(figsize=(9, 4.6))
     x = np.arange(len(survival))
     width = 0.2

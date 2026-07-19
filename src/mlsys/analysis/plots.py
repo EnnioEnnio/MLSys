@@ -316,9 +316,11 @@ def plot_regret_curves_by_head(triples: list[Triple], out_dir: str | Path) -> Pa
     """(6) Overlaid regret curves, one line per head. → ``regret_curves_by_head.png``."""
     plt, _ = _setup()
     fig, ax = plt.subplots(figsize=(8, 5.5))
-    for t in triples:
+    colors = theme.get_head_colors(len(triples))
+    markers = theme.get_head_markers(len(triples))
+    for t, color, marker in zip(triples, colors, markers, strict=True):
         df = triple_regret_df(t)
-        ax.plot(df["budget"], df["regret"], marker="o", label=t.head)
+        ax.plot(df["budget"], df["regret"], marker=marker, color=color, label=t.head)
     ax.set_xlabel("budget B")
     ax.set_ylabel("regret (r²)")
     ax.set_title("Regret vs budget by head width")

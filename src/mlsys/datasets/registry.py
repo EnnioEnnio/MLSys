@@ -31,6 +31,7 @@ class DatasetSpec:
     text_template: str
     shuffle_seed: int | None = None
     base_split: str | None = None
+    target_transform: Literal["identity", "log"] = "identity"
 
 
 def _config_path() -> Path:
@@ -48,6 +49,12 @@ def load_specs(path: Path | None = None) -> dict[str, DatasetSpec]:
         if entry["target_type"] != "regression":
             raise ValueError(
                 f"v1 supports target_type=regression only; got {entry['target_type']!r}"
+            )
+        target_transform = entry.get("target_transform", "identity")
+        if target_transform not in ("identity", "log"):
+            raise ValueError(
+                f"datasets.yaml entry {entry['name']!r}: target_transform must be "
+                f"'identity' or 'log'; got {target_transform!r}"
             )
         missing = [s for s in REQUIRED_SPLITS if s not in entry["splits"]]
         if missing:
@@ -75,6 +82,7 @@ def load_specs(path: Path | None = None) -> dict[str, DatasetSpec]:
             text_template=entry["text_template"],
             shuffle_seed=shuffle_seed,
             base_split=base_split,
+            target_transform=target_transform,
         )
         if spec.name in specs:
             raise ValueError(f"duplicate dataset name in datasets.yaml: {spec.name}")

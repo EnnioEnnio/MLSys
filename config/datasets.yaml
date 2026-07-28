@@ -48,3 +48,34 @@
   target_type: regression
   text_template: "status: {status}, bed: {bed}, bath: {bath}, acre_lot: {acre_lot}, street: {street}, city: {city}, state: {state}, zip_code: {zip_code}, house_size: {house_size}, prev_sold_date: {prev_sold_date}"
 
+# *_log: log-price variants for the heavy-tail hypothesis (prices are heavy-tailed;
+# regressing on log(price) may fix MSE/R² being dominated by a few huge listings).
+# Same shuffle_seed as the untransformed variant so train/val/test membership matches
+# exactly — only the target transform differs, keeping the comparison apples-to-apples.
+
+- name: usa_real_estate_log
+  hf_repo: jason1966/ahmedshahriarsakib_usa-real-estate-dataset
+  base_split: train
+  shuffle_seed: 42
+  splits:
+    train: "196630"
+    val: "28090"
+    test: "56181"
+  target_column: price
+  target_type: regression
+  target_transform: log
+  text_template: "status: {status}, bed: {bed}, bath: {bath}, acre_lot: {acre_lot}, street: {street}, city: {city}, state: {state}, zip_code: {zip_code}, house_size: {house_size}, prev_sold_date: {prev_sold_date}"
+
+- name: usa_real_estate_log_tiny
+  hf_repo: jason1966/ahmedshahriarsakib_usa-real-estate-dataset
+  base_split: train
+  shuffle_seed: 42
+  splits:
+    train: "2000"
+    val: "1000"
+    test: "56181"
+  target_column: price
+  target_type: regression
+  target_transform: log
+  text_template: "status: {status}, bed: {bed}, bath: {bath}, acre_lot: {acre_lot}, street: {street}, city: {city}, state: {state}, zip_code: {zip_code}, house_size: {house_size}, prev_sold_date: {prev_sold_date}"
+

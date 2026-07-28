@@ -169,3 +169,20 @@ def test_datasets_yaml_accepts_shuffle_seed_and_base_split(tmp_path) -> None:
     specs = load_dataset_specs(good)
     assert specs["d"].shuffle_seed == 42
     assert specs["d"].base_split == "train"
+
+
+def test_datasets_yaml_rejects_unknown_target_transform(tmp_path) -> None:
+    bad = tmp_path / "datasets.yaml"
+    bad.write_text(
+        "- name: d\n  hf_repo: y/z\n  target_transform: square\n"
+        "  splits:\n    train: train\n    val: validation\n    test: test\n"
+        '  target_column: y\n  target_type: regression\n  text_template: "{x}"\n'
+    )
+    with pytest.raises(ValueError, match="target_transform"):
+        load_dataset_specs(bad)
+
+
+def test_datasets_yaml_target_transform_defaults_and_parses() -> None:
+    specs = load_dataset_specs()
+    assert specs["usa_real_estate_log"].target_transform == "log"
+    assert specs["usa_real_estate"].target_transform == "identity"

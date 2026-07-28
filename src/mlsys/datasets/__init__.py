@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -67,6 +68,10 @@ class _SplitView:
                 target_float = float(target_val)
             except (ValueError, TypeError):
                 continue
+            if self.spec.target_transform == "log":
+                if target_float <= 0:
+                    continue
+                target_float = math.log(target_float)
             yield Row(text=render_template(template, row), target=target_float)
 
     def __len__(self) -> int:

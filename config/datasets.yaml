@@ -48,3 +48,40 @@
   target_type: regression
   text_template: "status: {status}, bed: {bed}, bath: {bath}, acre_lot: {acre_lot}, street: {street}, city: {city}, state: {state}, zip_code: {zip_code}, house_size: {house_size}, prev_sold_date: {prev_sold_date}"
 
+# *_log: log-price variants for the heavy-tail hypothesis. std(price) is ~14x the typical
+# MAE on this dataset, so r2 = 1 - MSE/Var(y) pins the whole pool near zero while the models
+# rank houses fine (METHOD.md, "The heavy tail, and what a log target does"). Regressing on
+# log(price) attacks that in the numerator: it is the training loss, not just the readout.
+# Same shuffle_seed as the untransformed variant, so the shuffle and the split slicing are
+# identical. Membership is then a strict SUBSET, not a row-for-row match: the log path also
+# drops rows with price <= 0, which log() cannot represent. Measured over the full base split:
+# 280 such rows out of 2,226,382 (0.013%, so ~35 in the 280,901 rows actually sliced), against
+# 1,541 null prices already dropped on both variants and 0 NaN/inf. The comparison against
+# usa_real_estate is like-for-like to within ~0.01% of rows.
+
+- name: usa_real_estate_log
+  hf_repo: jason1966/ahmedshahriarsakib_usa-real-estate-dataset
+  base_split: train
+  shuffle_seed: 42
+  splits:
+    train: "196630"
+    val: "28090"
+    test: "56181"
+  target_column: price
+  target_type: regression
+  target_transform: log
+  text_template: "status: {status}, bed: {bed}, bath: {bath}, acre_lot: {acre_lot}, street: {street}, city: {city}, state: {state}, zip_code: {zip_code}, house_size: {house_size}, prev_sold_date: {prev_sold_date}"
+
+- name: usa_real_estate_log_tiny
+  hf_repo: jason1966/ahmedshahriarsakib_usa-real-estate-dataset
+  base_split: train
+  shuffle_seed: 42
+  splits:
+    train: "2000"
+    val: "1000"
+    test: "56181"
+  target_column: price
+  target_type: regression
+  target_transform: log
+  text_template: "status: {status}, bed: {bed}, bath: {bath}, acre_lot: {acre_lot}, street: {street}, city: {city}, state: {state}, zip_code: {zip_code}, house_size: {house_size}, prev_sold_date: {prev_sold_date}"
+

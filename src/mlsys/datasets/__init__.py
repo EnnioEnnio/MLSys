@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -67,6 +68,16 @@ class _SplitView:
                 target_float = float(target_val)
             except (ValueError, TypeError):
                 continue
+            # float("nan") clears both guards above, and a single NaN target poisons the
+            # train-split mean/std every downstream metric is z-scored against.
+            if not math.isfinite(target_float):
+                continue
+            if self.spec.target_transform == "log":
+                # Non-positive prices are data errors, not small houses; log() has no value
+                # there. Dropping joins the existing missing/invalid-target path.
+                if target_float <= 0:
+                    continue
+                target_float = math.log(target_float)
             yield Row(text=render_template(template, row), target=target_float)
 
     def __len__(self) -> int:

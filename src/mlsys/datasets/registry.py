@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
 import yaml
+
+# Nonlinear reshaping of the target before z-scoring (see CLAUDE.md "Data flow").
+# Derived from the alias so load_specs() validation can't drift from the type.
+TargetTransform = Literal["identity", "log"]
+TARGET_TRANSFORMS = get_args(TargetTransform)
 
 REQUIRED_FIELDS = (
     "name",
@@ -31,6 +36,7 @@ class DatasetSpec:
     text_template: str
     shuffle_seed: int | None = None
     base_split: str | None = None
+    target_transform: TargetTransform = "identity"
 
 
 def _config_path() -> Path:
@@ -48,6 +54,12 @@ def load_specs(path: Path | None = None) -> dict[str, DatasetSpec]:
         if entry["target_type"] != "regression":
             raise ValueError(
                 f"v1 supports target_type=regression only; got {entry['target_type']!r}"
+            )
+        target_transform = entry.get("target_transform", "identity")
+        if target_transform not in TARGET_TRANSFORMS:
+            raise ValueError(
+                f"datasets.yaml entry {entry['name']!r}: target_transform must be one of "
+                f"{list(TARGET_TRANSFORMS)}; got {target_transform!r}"
             )
         missing = [s for s in REQUIRED_SPLITS if s not in entry["splits"]]
         if missing:
@@ -75,6 +87,7 @@ def load_specs(path: Path | None = None) -> dict[str, DatasetSpec]:
             text_template=entry["text_template"],
             shuffle_seed=shuffle_seed,
             base_split=base_split,
+            target_transform=target_transform,
         )
         if spec.name in specs:
             raise ValueError(f"duplicate dataset name in datasets.yaml: {spec.name}")

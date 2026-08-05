@@ -1,0 +1,7 @@
+group,criterion,rank_corr_mean,rank_corr_min,rank_corr_max,ref_min_trainable,ref_max_trainable,regret_at_1_mean,regret_at_1_max,null_regret_at_1,budget_to_zero,proxy_top_1,top_1_finetunable
+wine (5 seeds),r2,0.203,0.068,0.3,0.8717,0.9176,0.1002,0.1323,0.0348,2,potion-base-32M,False
+wine (5 seeds),mae,0.179,0.079,0.291,0.5938,0.8718,0.4204,0.5687,0.1749,14,potion-base-32M,False
+wine (5 seeds),spearman,0.219,0.165,0.259,0.9324,0.9557,0.0544,0.0722,0.0179,2,potion-base-32M,False
+housing (1 run),r2,-0.044,-0.044,-0.044,-0.0,0.0307,0.0131,0.0131,0.009,10,roberta-base,True
+housing (1 run),mae,0.45,0.45,0.45,260787.2569,437642.1758,54177.1357,54177.1357,47372.8095,11,potion-base-32M,False
+housing (1 run),spearman,0.191,0.191,0.191,-0.0467,0.7756,0.1271,0.1271,0.1275,12,potion-base-32M,False

@@ -94,6 +94,11 @@ land in extras. On by default (`HeadTrainConfig.standardize_targets`); turn off 
 `--no-standardize-targets` / `STANDARDIZE_TARGETS=0` when reusing the pipeline for
 tasks whose targets shouldn't be rescaled (e.g. the summarization pilot).
 
+A dataset's `target_transform` (e.g. `log` for `usa_real_estate_log`) applies in
+`Row` construction, *before* z-scoring — so "original units" for that dataset means
+log-dollars, not dollars; z-score inversion and `regression_metrics` are
+transform-agnostic and just operate on whatever unit `Row.target` carries.
+
 Each substep is wrapped in `timing.py:Timer.section`. **Don't rename the timing
 fields** (`prepare_model_s`, `prepare_data_s`, `inference_s`, `train_head_s`,
 `eval_s`) — they're the RQ2 measurement and appear verbatim in `results.jsonl`.
@@ -137,7 +142,14 @@ loads `base_split` once, shuffles it with the fixed seed, then slices off
 `train`/`val`/`test` in that fixed order (regardless of YAML key order) —
 non-overlapping and deterministic across runs *for a pinned `datasets`
 version*; HF's shuffle isn't guaranteed stable across library versions, so
-keep local and cluster envs in sync (e.g. `usa_real_estate`).
+keep local and cluster envs in sync (e.g. `usa_real_estate`). Optional
+`target_transform: log` (default `identity`) log-transforms `Row.target` at
+load time and drops non-positive rows (e.g. `usa_real_estate_log`) — used to
+model heavy-tailed targets without touching the training/metrics code. A `log`
+dataset's splits are therefore a strict **subset** of its untransformed twin's,
+not a row-for-row match. Non-finite targets (`NaN`/`inf`) are dropped on *every*
+path: they clear both the `is None` check and the `float()` cast, and a single
+one poisons the train-split mean/std that z-scoring is computed from.
 
 ## Conventions
 

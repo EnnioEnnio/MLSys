@@ -60,8 +60,14 @@ git -C "$CODE_PATH" log -1 --format='%H %s' > "$REPO_PATH/runs/$SLURM_JOB_ID/com
 nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader
 
 # Step 1: Set up container with dependencies (reuses container across jobs)
+# The container is node-local and shared across every job you run on that node
+# (same CONTAINER_NAME), so concurrent submissions landing on the same node
+# would otherwise race on `pip install -e /workspace` against each other's
+# CODE_PATH mount and corrupt the install. The flock serializes Step 1 per
+# node, same fix as array_search.slurm/consolidate.slurm.
 echo "Setting up container with dependencies..."
 CONTAINER_NAME=mlsys-$USER-pytorch2503
+flock /tmp/mlsys-container-$USER.lock \
 srun --container-image="nvcr.io#nvidia/pytorch:25.03-py3" \
      --container-name=$CONTAINER_NAME \
      --container-writable \

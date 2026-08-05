@@ -182,7 +182,17 @@ def test_datasets_yaml_rejects_unknown_target_transform(tmp_path) -> None:
         load_dataset_specs(bad)
 
 
-def test_datasets_yaml_target_transform_defaults_and_parses() -> None:
+def test_datasets_yaml_target_transform_defaults_to_identity(tmp_path) -> None:
+    good = tmp_path / "datasets.yaml"
+    good.write_text(
+        "- name: d\n  hf_repo: y/z\n"
+        "  splits:\n    train: train\n    val: validation\n    test: test\n"
+        '  target_column: y\n  target_type: regression\n  text_template: "{x}"\n'
+    )
+    assert load_dataset_specs(good)["d"].target_transform == "identity"
+
+
+def test_shipped_datasets_yaml_target_transforms() -> None:
     specs = load_dataset_specs()
     assert specs["usa_real_estate_log"].target_transform == "log"
     assert specs["usa_real_estate"].target_transform == "identity"

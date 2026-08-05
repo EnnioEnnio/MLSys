@@ -145,7 +145,11 @@ version*; HF's shuffle isn't guaranteed stable across library versions, so
 keep local and cluster envs in sync (e.g. `usa_real_estate`). Optional
 `target_transform: log` (default `identity`) log-transforms `Row.target` at
 load time and drops non-positive rows (e.g. `usa_real_estate_log`) — used to
-model heavy-tailed targets without touching the training/metrics code.
+model heavy-tailed targets without touching the training/metrics code. A `log`
+dataset's splits are therefore a strict **subset** of its untransformed twin's,
+not a row-for-row match. Non-finite targets (`NaN`/`inf`) are dropped on *every*
+path: they clear both the `is None` check and the `float()` cast, and a single
+one poisons the train-split mean/std that z-scoring is computed from.
 
 ## Conventions
 

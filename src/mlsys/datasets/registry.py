@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
 import yaml
+
+# Nonlinear reshaping of the target before z-scoring (see CLAUDE.md "Data flow").
+# Derived from the alias so load_specs() validation can't drift from the type.
+TargetTransform = Literal["identity", "log"]
+TARGET_TRANSFORMS = get_args(TargetTransform)
 
 REQUIRED_FIELDS = (
     "name",
@@ -31,7 +36,7 @@ class DatasetSpec:
     text_template: str
     shuffle_seed: int | None = None
     base_split: str | None = None
-    target_transform: Literal["identity", "log"] = "identity"
+    target_transform: TargetTransform = "identity"
 
 
 def _config_path() -> Path:
@@ -51,10 +56,10 @@ def load_specs(path: Path | None = None) -> dict[str, DatasetSpec]:
                 f"v1 supports target_type=regression only; got {entry['target_type']!r}"
             )
         target_transform = entry.get("target_transform", "identity")
-        if target_transform not in ("identity", "log"):
+        if target_transform not in TARGET_TRANSFORMS:
             raise ValueError(
-                f"datasets.yaml entry {entry['name']!r}: target_transform must be "
-                f"'identity' or 'log'; got {target_transform!r}"
+                f"datasets.yaml entry {entry['name']!r}: target_transform must be one of "
+                f"{list(TARGET_TRANSFORMS)}; got {target_transform!r}"
             )
         missing = [s for s in REQUIRED_SPLITS if s not in entry["splits"]]
         if missing:

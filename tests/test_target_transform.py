@@ -41,3 +41,12 @@ def test_identity_transform_is_unaffected() -> None:
     view = _SplitView(spec=_spec("identity"), hf_split=rows)
     out = list(view)
     assert [row.target for row in out] == [100.0, -5.0]
+
+
+def test_nonfinite_targets_are_dropped_on_both_transforms() -> None:
+    # A NaN clears both `is None` and `float()`; one of them poisons the train-split
+    # mean/std that every downstream metric is z-scored against.
+    rows = [{"price": 100.0}, {"price": float("nan")}, {"price": float("inf")}]
+    for transform in ("identity", "log"):
+        out = list(_SplitView(spec=_spec(transform), hf_split=rows))
+        assert len(out) == 1, transform

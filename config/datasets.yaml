@@ -48,10 +48,14 @@
   target_type: regression
   text_template: "status: {status}, bed: {bed}, bath: {bath}, acre_lot: {acre_lot}, street: {street}, city: {city}, state: {state}, zip_code: {zip_code}, house_size: {house_size}, prev_sold_date: {prev_sold_date}"
 
-# *_log: log-price variants for the heavy-tail hypothesis (prices are heavy-tailed;
-# regressing on log(price) may fix MSE/R² being dominated by a few huge listings).
-# Same shuffle_seed as the untransformed variant so train/val/test membership matches
-# exactly — only the target transform differs, keeping the comparison apples-to-apples.
+# *_log: log-price variants for the heavy-tail hypothesis. std(price) is ~14x the typical
+# MAE on this dataset, so r2 = 1 - MSE/Var(y) pins the whole pool near zero while the models
+# rank houses fine (METHOD.md, "The heavy tail, and what a log target does"). Regressing on
+# log(price) attacks that in the numerator: it is the training loss, not just the readout.
+# Same shuffle_seed as the untransformed variant, so the shuffle and the split slicing are
+# identical. Membership is then a strict SUBSET, not a row-for-row match: the log path also
+# drops rows with price <= 0, which log() cannot represent. Quantify that drop before
+# claiming the frozen/finetune comparison against usa_real_estate is like-for-like.
 
 - name: usa_real_estate_log
   hf_repo: jason1966/ahmedshahriarsakib_usa-real-estate-dataset

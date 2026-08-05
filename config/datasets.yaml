@@ -54,8 +54,10 @@
 # log(price) attacks that in the numerator: it is the training loss, not just the readout.
 # Same shuffle_seed as the untransformed variant, so the shuffle and the split slicing are
 # identical. Membership is then a strict SUBSET, not a row-for-row match: the log path also
-# drops rows with price <= 0, which log() cannot represent. Quantify that drop before
-# claiming the frozen/finetune comparison against usa_real_estate is like-for-like.
+# drops rows with price <= 0, which log() cannot represent. Measured over the full base split:
+# 280 such rows out of 2,226,382 (0.013%, so ~35 in the 280,901 rows actually sliced), against
+# 1,541 null prices already dropped on both variants and 0 NaN/inf. The comparison against
+# usa_real_estate is like-for-like to within ~0.01% of rows.
 
 - name: usa_real_estate_log
   hf_repo: jason1966/ahmedshahriarsakib_usa-real-estate-dataset

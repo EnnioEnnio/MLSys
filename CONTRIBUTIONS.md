@@ -1,4 +1,4 @@
-Ennio:
+## Ennio:
 ### Conception & Planning
 
 - Conducted model and dataset research (surveyed encoder architectures and
@@ -52,10 +52,10 @@ Ennio:
 ### Report
 - Planned, drafted, co-authored, and revised the final report. 
 
-Simon:
+## Simon:
 -
 
-Kiru:
+## Kiru:
 - seeding across models
 - learning-rate warmup decay scheduling (lr-warmup-decay-schedule not merged -- https://github.com/EnnioEnnio/MLSys/issues/44)
 - state-of-the-art summarization research

@@ -46,6 +46,7 @@
 
 ### Presentation
 
+- Participated in the kick-off presentation.
 - Participated in the mid-term presentation.
 - Created and participated in the end-of-project presentation.
 
@@ -74,6 +75,7 @@
  
 ### Presentation
 
+- Participated in and partly created the kick-off presentation.
 - Participated in and partly created the mid-term presentation.
 - Participated in and partly created the end-of-project presentation.
 

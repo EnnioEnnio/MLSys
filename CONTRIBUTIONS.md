@@ -53,7 +53,32 @@
 - Planned, drafted, co-authored, and revised the final report. 
 
 ## Simon:
--
+
+### Conception & Planning
+
+- Participated in model and dataset research (+ adaption of pipeline).
+- Participated in the team meetings including creation of update presentations.
+
+### Core Pipeline Implementation & Experiments
+
+- Adapted model search pipeline to additional model family.
+- Implemented and tested linear head averaging.
+- Co-implemented the `finetune` and `full_eval` strategies plus the
+  SHiFT-style regret metric comparing the frozen-backbone proxy ranking
+  against full fine-tuning ground truth.
+- Implemented and tested different activation functions.
+- Integrated second dataset into pipeline + implementation of log pricing improvement for second dataset.
+- Partly executed other experiment runs on cluster.
+- Explored concepts (metrics and model families) for summarization pilot.
+- Implementation (but unfortunately no testing) of summarization pilot.
+ 
+### Presentation
+
+- Participated in and partly created the mid-term presentation.
+- Participated in and partly created the end-of-project presentation.
+
+### Report
+- Co-authored and revised the final report.
 
 ## Kiru:
 - seeding across models

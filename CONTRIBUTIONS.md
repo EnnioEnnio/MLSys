@@ -81,6 +81,19 @@
 - Co-authored and revised the final report.
 
 ## Kiru:
+
+### Pipeline implementation
 - seeding across models
 - learning-rate warmup decay scheduling (lr-warmup-decay-schedule not merged -- https://github.com/EnnioEnnio/MLSys/issues/44)
+
+### Conception & Planning
+- Adapted model search pipeline to additional model family.
 - state-of-the-art summarization research
+
+### Presentation
+- Participated in and partly created the kick-off presentation.
+- Participated in and partly created the mid-term presentation.
+- Participated in the end-of-project presentation.
+
+### Report
+- Co-authored and revised the final report.

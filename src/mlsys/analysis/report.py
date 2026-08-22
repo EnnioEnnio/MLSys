@@ -114,11 +114,20 @@ def _load_surviving(experiment_dir: Path) -> tuple[list[Triple], list[str]]:
     return triples, skipped
 
 
-def analyze_experiment(experiment_dir: str | Path, out_dir: str | Path | None = None) -> Path:
-    """Build every artifact + ``SUMMARY.md`` for an experiment folder. Returns the SUMMARY path."""
+def analyze_experiment(
+    experiment_dir: str | Path, out_dir: str | Path | None = None, paper: bool = False
+) -> Path:
+    """Build every artifact + ``SUMMARY.md`` for an experiment folder. Returns the SUMMARY path.
+
+    ``paper=True`` switches the figures to the print preset (9 pt text, no in-plot titles,
+    exact ``\\columnwidth``/``\\textwidth`` sizing, vector PDF) — see ``theme.apply_theme``.
+    SUMMARY.md then *links* the figures instead of embedding them, since Markdown cannot
+    inline a PDF (see :func:`_img`).
+    """
     experiment_dir = Path(experiment_dir)
     out_dir = Path(out_dir) if out_dir else experiment_dir / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
+    plots.PAPER = paper
 
     triples, skipped = _load_surviving(experiment_dir)
     if not triples:
@@ -228,7 +237,15 @@ def _build_comparison(triples: list[Triple], out_dir: Path) -> Comparison:
 
 
 def _img(png: Path, base: Path, caption: str = "") -> str:
-    return f"![{caption}]({_rel(png, base)})\n"
+    """Embed the figure — or link it when Markdown cannot inline the format.
+
+    Paper mode emits vector PDF, and no common Markdown renderer inlines a PDF via
+    ``![](...)``; embedding one yields a broken-image icon. Fall back to a plain link there.
+    """
+    rel = _rel(png, base)
+    if png.suffix.lower() != ".png":
+        return f"[{caption or png.stem}]({rel})\n"
+    return f"![{caption}]({rel})\n"
 
 
 def _assemble_summary(

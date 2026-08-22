@@ -29,6 +29,11 @@ if TYPE_CHECKING:
     from mlsys.analysis.loader import Triple
 
 
+#: Run-level switch for the print preset, set by ``report.analyze_experiment(paper=True)``.
+#: Read by :func:`_setup` on every call, so it must be assigned before any plotting starts.
+PAPER: bool = False
+
+
 def _setup():
     """Lazy import + themed report style. Returns the (plt, sns) pair."""
     import matplotlib
@@ -37,15 +42,25 @@ def _setup():
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    theme.apply_theme(plt, sns)
+    theme.apply_theme(plt, sns, paper=PAPER)
     return plt, sns
 
 
 def _save(fig: Figure, out_dir: str | Path, slug: str) -> Path:
+    """Write ``<out_dir>/<slug>.{png|pdf}``. Paper mode emits vector PDF at exact size.
+
+    ``bbox_inches="tight"`` is deliberately *not* used in paper mode: it crops to the artist
+    bounding box, which silently changes the figure's width and would break the "authored at
+    exactly \\columnwidth, so LaTeX never rescales" guarantee. ``constrained_layout`` (set by
+    the plot functions) does the padding job instead.
+    """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{slug}.png"
-    fig.savefig(path, dpi=120, bbox_inches="tight")
+    path = out_dir / f"{slug}.{theme.fig_ext()}"
+    if theme.is_paper():
+        fig.savefig(path)
+    else:
+        fig.savefig(path, dpi=120, bbox_inches="tight")
     import matplotlib.pyplot as plt
 
     plt.close(fig)
@@ -78,7 +93,7 @@ def plot_r2_proxy_vs_reference(triple: Triple, out_dir: str | Path) -> Path:
     fig, ax = plt.subplots(figsize=(max(8, len(triple.models)), 5))
     sns.barplot(long, x="model", y="r2", hue="pass", palette=palette, ax=ax)
     ax.axhline(0, color=theme.INK, linewidth=0.8)
-    ax.set_title(f"{pl} vs {tl} r² — head {triple.head}")
+    theme.title(ax, f"{pl} vs {tl} r² — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
     return _save(fig, out_dir, "r2_proxy_vs_reference")
 
@@ -108,13 +123,15 @@ def plot_proxy_scatter(triple: Triple, out_dir: str | Path) -> Path:
             color = theme.STATUS_COLORS["ok"]
             marker = theme.STATUS_MARKERS["ok"]
         ax.scatter(x, y, c=color, marker=marker, s=60, zorder=3)
-        ax.annotate(m, (x, y), fontsize=7, xytext=(3, 3), textcoords="offset points")
+        ax.annotate(m, (x, y), xytext=(3, 3), textcoords="offset points")
     pad = 0.05 * (hi - lo or 1)
     ax.plot([lo - pad, hi + pad], [lo - pad, hi + pad], "--", color=theme.GRID, label="y = x")
     ax.set_xlabel(f"{triple.proxy_label} r² (cheap proxy)")
     ref_qualifier = " (ground truth)" if triple.reference_label == "finetune" else ""
     ax.set_ylabel(f"{triple.reference_label} r²{ref_qualifier}")
-    ax.set_title(f"Proxy quality — head {triple.head}\nslate=ok  brick-red=diverged  grey=skipped")
+    theme.title(
+        ax, f"Proxy quality — head {triple.head}\nslate=ok  brick-red=diverged  grey=skipped"
+    )
     ax.legend()
     return _save(fig, out_dir, "proxy_scatter")
 
@@ -139,7 +156,7 @@ def plot_r2_delta(triple: Triple, out_dir: str | Path) -> Path:
     ax.bar(df["model"], df["delta_r2"], color=colors)
     ax.axhline(0, color=theme.INK, linewidth=0.8)
     ax.set_ylabel(f"Δ r² ({triple.reference_label} - {triple.proxy_label})")
-    ax.set_title(f"{triple.reference_label} lift over {triple.proxy_label} — head {triple.head}")
+    theme.title(ax, f"{triple.reference_label} lift over {triple.proxy_label} — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
     return _save(fig, out_dir, "r2_delta")
 
@@ -168,7 +185,7 @@ def plot_regret_curve(triple: Triple, out_dir: str | Path) -> Path:
     ax.axvline(b0, color=theme.GRID, linestyle=":", label=f"budget-to-zero = {b0}")
     ax.set_xlabel(f"budget B (top-B of {triple.proxy_label}-r² ranking)")
     ax.set_ylabel("regret (r²)")
-    ax.set_title(f"Regret vs budget — head {triple.head}")
+    theme.title(ax, f"Regret vs budget — head {triple.head}")
     ax.legend()
     return _save(fig, out_dir, "regret_curve")
 
@@ -179,25 +196,39 @@ def plot_ref_spearman_vs_r2(triple: Triple, out_dir: str | Path) -> Path:
     → ``ref_spearman_vs_r2.png``.
     """
     plt, _ = _setup()
+    paper = theme.is_paper()
     ft = triple.reference
-    fig, ax = plt.subplots(figsize=(7, 6))
+    fig, ax = plt.subplots(
+        figsize=theme.size((7, 6), (0.49 * theme.TEXT_W_IN, 2.8)),
+        constrained_layout=paper,
+    )
     for model, r2, spearman in zip(ft["model"], ft["r2"], ft["spearman"], strict=True):
-        if triple.diverged.get(str(model), False):
+        diverged = triple.diverged.get(str(model), False)
+        if diverged:
             color = theme.STATUS_COLORS["diverged"]
             marker = theme.STATUS_MARKERS["diverged"]
         else:
             color = theme.STATUS_COLORS["ok"]
             marker = theme.STATUS_MARKERS["ok"]
-        ax.scatter(r2, spearman, c=color, marker=marker, s=60, zorder=3)
-        ax.annotate(
-            str(model), (r2, spearman), fontsize=7, xytext=(3, 3), textcoords="offset points"
-        )
-    ax.axvline(0, color=theme.GRID, linestyle="--", label="r² = 0 (scale broken left of here)")
+        ax.scatter(r2, spearman, c=color, marker=marker, s=25 if paper else 60, zorder=3)
+        # 16 labels at 9 pt overlap into mush in a half-text-width panel. The figure's whole
+        # claim is about the *diverged* models, so paper mode labels only those and lets the
+        # healthy cluster read as a cluster.
+        if paper and not diverged:
+            continue
+        ax.annotate(str(model), (r2, spearman), xytext=(3, 3), textcoords="offset points")
+    ax.axvline(
+        0,
+        color=theme.GRID,
+        linestyle="--",
+        label="r² = 0" if paper else "r² = 0 (scale broken left of here)",
+    )
     ax.set_xlabel(f"{triple.reference_label} r²")
     ax.set_ylabel(f"{triple.reference_label} Spearman")
-    ax.set_title(
+    theme.title(
+        ax,
         f"Rank preserved vs scale broken — head {triple.head}\n"
-        "diverged models (brick-red) keep high Spearman despite negative r²"
+        "diverged models (brick-red) keep high Spearman despite negative r²",
     )
     ax.legend()
     return _save(fig, out_dir, "ref_spearman_vs_r2")
@@ -241,8 +272,8 @@ def plot_timing_stacked(triple: Triple, out_dir: str | Path) -> Path:
     ax.set_xticks(x)
     ax.set_xticklabels(models, rotation=75)
     ax.set_ylabel(f"seconds (left bar={pl}, right={tl})")
-    ax.set_title(f"Timing breakdown {pl} vs {tl} — head {triple.head}")
-    ax.legend(title="substep", fontsize=8)
+    theme.title(ax, f"Timing breakdown {pl} vs {tl} — head {triple.head}")
+    ax.legend(title="substep")
     return _save(fig, out_dir, "timing_stacked")
 
 
@@ -265,7 +296,7 @@ def plot_peak_gpu_mem(triple: Triple, out_dir: str | Path) -> Path:
     palette = {pl: theme.PROXY_COLOR, tl: theme.REFERENCE_COLOR}
     fig, ax = plt.subplots(figsize=(max(8, len(triple.models)), 5))
     sns.barplot(long, x="model", y="peak_gpu_mem_mb", hue="pass", palette=palette, ax=ax)
-    ax.set_title(f"Peak GPU memory {pl} vs {tl} — head {triple.head}")
+    theme.title(ax, f"Peak GPU memory {pl} vs {tl} — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
     return _save(fig, out_dir, "peak_gpu_mem")
 
@@ -303,7 +334,7 @@ def plot_proxy_time_breakdown(triple: Triple, out_dir: str | Path) -> Path:
         hatch=SUBSTEP_HATCHES[head_idx],
     )
     ax.set_ylabel("seconds")
-    ax.set_title(f"{triple.proxy_label} pass: where the time goes — head {triple.head}")
+    theme.title(ax, f"{triple.proxy_label} pass: where the time goes — head {triple.head}")
     ax.tick_params(axis="x", rotation=75)
     ax.legend()
     return _save(fig, out_dir, "proxy_time_breakdown")
@@ -323,7 +354,7 @@ def plot_regret_curves_by_head(triples: list[Triple], out_dir: str | Path) -> Pa
         ax.plot(df["budget"], df["regret"], marker=marker, color=color, label=t.head)
     ax.set_xlabel("budget B")
     ax.set_ylabel("regret (r²)")
-    ax.set_title("Regret vs budget by head width")
+    theme.title(ax, "Regret vs budget by head width")
     ax.legend(title="head")
     return _save(fig, out_dir, "regret_curves_by_head")
 
@@ -338,7 +369,10 @@ def plot_regret_at1_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
         at1.append(float(df.iloc[0]["regret"]))
         auc.append(float(df["regret"].mean()))
         b0.append(budget_to_zero(df))
-    fig, ax1 = plt.subplots(figsize=(8, 5))
+    fig, ax1 = plt.subplots(
+        figsize=theme.size((8, 5), (0.49 * theme.TEXT_W_IN, 2.4)),
+        constrained_layout=theme.is_paper(),
+    )
     ax1.plot(heads, at1, marker=theme.PROXY_MARKER, color=theme.PROXY_COLOR, label="regret@1")
     ax1.plot(
         heads,
@@ -351,9 +385,26 @@ def plot_regret_at1_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
     ax2 = ax1.twinx()
     ax2.plot(heads, b0, marker="^", color=theme.STATUS_COLORS["diverged"], label="budget-to-zero")
     ax2.set_ylabel("budget-to-zero")
-    ax1.set_title("Proxy shortlist quality vs head width")
+    theme.title(ax1, "Proxy shortlist quality vs head width")
     lines = ax1.get_lines() + ax2.get_lines()
-    ax1.legend(lines, [ln.get_label() for ln in lines], loc="best")
+    if theme.is_paper():
+        # Arm labels run to 12 chars ("MLP_256_zsgc") against ~0.65 in categories — they collide
+        # head-on at 9 pt unless rotated.
+        ax1.tick_params(axis="x", rotation=30)
+        for lbl in ax1.get_xticklabels():
+            lbl.set_horizontalalignment("right")
+        # "loc=best" put the legend straight on top of the curves; above the axes it cannot.
+        ax1.legend(
+            lines,
+            [ln.get_label() for ln in lines],
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.01),
+            ncol=3,
+            handlelength=1.4,
+            columnspacing=0.9,
+        )
+    else:
+        ax1.legend(lines, [ln.get_label() for ln in lines], loc="best")
     return _save(fig, out_dir, "regret_at1_vs_head")
 
 
@@ -376,7 +427,7 @@ def plot_best_r2_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
         label=f"best {tl} r²",
     )
     ax.set_ylabel("r²")
-    ax.set_title("Best achievable r² vs head width")
+    theme.title(ax, "Best achievable r² vs head width")
     ax.legend()
     return _save(fig, out_dir, "best_r2_vs_head")
 
@@ -390,11 +441,35 @@ def _heatmap(triples: list[Triple], kind: str, out_dir: str | Path, slug: str, t
         frame = t.proxy if kind == "proxy" else t.reference
         series[t.head] = frame.set_index("model")["r2"]
     matrix = pd.DataFrame(series)
-    fig, ax = plt.subplots(figsize=(max(6, len(triples) * 1.5), max(6, len(matrix) * 0.5)))
-    sns.heatmap(
-        matrix, annot=True, fmt=".2f", cmap=theme.get_cmap_r2(), ax=ax, cbar_kws={"label": "r²"}
+    paper = theme.is_paper()
+    # Appendix figure: height is free, so give every model row enough room for a 9 pt label.
+    # Width is half the text block because these are placed as side-by-side panels.
+    fig, ax = plt.subplots(
+        figsize=theme.size(
+            (max(6, len(triples) * 1.5), max(6, len(matrix) * 0.5)),
+            (0.49 * theme.TEXT_W_IN, max(2.5, 0.20 * len(matrix) + 1.0)),
+        ),
+        constrained_layout=paper,
     )
-    ax.set_title(title)
+    # Long model names eat ~1.7 in of a 3.43 in panel. In paper mode the colourbar is dropped
+    # — every cell already carries its number, so the bar is pure redundancy costing ~0.7 in,
+    # which is the difference between the columns fitting and the annotations colliding.
+    sns.heatmap(
+        matrix,
+        annot=True,
+        fmt=".2f",
+        cmap=theme.get_cmap_r2(),
+        ax=ax,
+        cbar=not paper,
+        cbar_kws=None if paper else {"label": "r²"},
+        annot_kws=theme.annot_kws(),
+    )
+    if paper:
+        ax.set_ylabel("")  # the tick labels already say these are models
+        ax.tick_params(axis="x", rotation=45)
+        for lbl in ax.get_xticklabels():
+            lbl.set_horizontalalignment("right")
+    theme.title(ax, title)
     return _save(fig, out_dir, slug)
 
 
@@ -431,9 +506,10 @@ def plot_divergence_map(triples: list[Triple], out_dir: str | Path) -> Path:
         cbar=False,
         ax=ax,
         linewidths=0.5,
+        annot_kws=theme.annot_kws(),
     )
     tl = _pass_labels(triples)[1]
-    ax.set_title(f"Divergence map — 1 = {tl} r² < 0 (brick-red)")
+    theme.title(ax, f"Divergence map — 1 = {tl} r² < 0 (brick-red)")
     return _save(fig, out_dir, "divergence_map")
 
 
@@ -450,9 +526,9 @@ def plot_proxy_rank_spearman_vs_head(triples: list[Triple], out_dir: str | Path)
     sns.barplot(x=heads, y=rhos, ax=ax, color=theme.PROXY_COLOR)
     ax.set_ylim(0, 1)
     ax.set_ylabel(f"Spearman({pl} rank, {tl} rank)")
-    ax.set_title("Proxy rank fidelity vs head width")
+    theme.title(ax, "Proxy rank fidelity vs head width")
     for i, r in enumerate(rhos):
-        ax.text(i, r + 0.01, f"{r:.3f}", ha="center", fontsize=9)
+        ax.text(i, r + 0.01, f"{r:.3f}", ha="center")
     return _save(fig, out_dir, "proxy_rank_spearman_vs_head")
 
 
@@ -481,7 +557,7 @@ def plot_cost_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
         label="mean peak_gpu_mem_mb",
     )
     ax2.set_ylabel("mean peak_gpu_mem_mb")
-    ax1.set_title(f"{tl} cost vs head width")
+    theme.title(ax1, f"{tl} cost vs head width")
     lines = ax1.get_lines() + ax2.get_lines()
     ax1.legend(lines, [ln.get_label() for ln in lines], loc="best")
     return _save(fig, out_dir, "cost_vs_head")
@@ -513,7 +589,10 @@ def plot_epochs_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
     mean_ft = et["mean_ref_epochs"].tolist()
     cap = et["proxy_cap"].iloc[0] if "proxy_cap" in et.columns else None
 
-    fig, ax = plt.subplots(figsize=(max(6, len(heads) * 1.5), 5))
+    fig, ax = plt.subplots(
+        figsize=theme.size((max(6, len(heads) * 1.5), 5), (0.49 * theme.TEXT_W_IN, 2.4)),
+        constrained_layout=theme.is_paper(),
+    )
     width = 0.35
     pl, tl = _pass_labels(triples)
     ax.bar(
@@ -540,7 +619,7 @@ def plot_epochs_vs_head(triples: list[Triple], out_dir: str | Path) -> Path:
     ax.set_xticks(list(x))
     ax.set_xticklabels(heads)
     ax.set_ylabel("mean epochs")
-    ax.set_title(f"Early-stopping epochs: {pl} vs {tl} per head")
+    theme.title(ax, f"Early-stopping epochs: {pl} vs {tl} per head")
     ax.legend()
     return _save(fig, out_dir, "epochs_vs_head")
 
@@ -557,7 +636,13 @@ def plot_head_rank_agreement(triples: list[Triple], out_dir: str | Path) -> Path
     df = head_rank_agreement_matrix(triples)
     matrix = df.set_index("head") if "head" in df.columns else df
 
-    fig, ax = plt.subplots(figsize=(max(4, len(matrix) * 1.5), max(4, len(matrix) * 1.2)))
+    fig, ax = plt.subplots(
+        figsize=theme.size(
+            (max(4, len(matrix) * 1.5), max(4, len(matrix) * 1.2)),
+            (0.49 * theme.TEXT_W_IN, 2.6),
+        ),
+        constrained_layout=theme.is_paper(),
+    )
     sns.heatmap(
         matrix,
         annot=True,
@@ -567,8 +652,9 @@ def plot_head_rank_agreement(triples: list[Triple], out_dir: str | Path) -> Path
         vmax=1,
         ax=ax,
         cbar_kws={"label": "Spearman rho"},
+        annot_kws=theme.annot_kws(),
     )
-    ax.set_title("Head x head proxy-rank agreement (Spearman rho over proxy r2)")
+    theme.title(ax, "Head x head proxy-rank agreement (Spearman rho over proxy r2)")
     return _save(fig, out_dir, "head_rank_agreement")
 
 
@@ -595,10 +681,21 @@ def plot_proxy_timing_share(triples: list[Triple], out_dir: str | Path) -> Path:
         "eval_pct",
     ]
     labels = ["prepare_model_s", "prepare_data_s", "inference_s", "train_head_s", "eval_s"]
+    paper = theme.is_paper()
+    if paper:
+        # Only the `_s` suffix goes. The substep names are the RQ2 measurement and appear
+        # verbatim in the caption ("prepare model, prepare data, inference") and results.jsonl,
+        # so shortening them past recognition breaks the figure's link to the text.
+        labels = [key.removesuffix("_s") for key in labels]
     heads = ft_table["head"].tolist()
     import numpy as np
 
-    fig, ax = plt.subplots(figsize=(max(7, len(heads) * 2), 4))
+    # Body figure (page-limited). Slightly taller than the 1.82 in it occupied, to pay for the
+    # two-row legend the full substep names need.
+    fig, ax = plt.subplots(
+        figsize=theme.size((max(7, len(heads) * 2), 4), (theme.COLUMN_W_IN, 2.05)),
+        constrained_layout=paper,
+    )
     left = np.zeros(len(heads))
     for i, (col, label) in enumerate(zip(pct_cols, labels, strict=True)):
         vals = ft_table[col].to_numpy(dtype=float)
@@ -607,17 +704,35 @@ def plot_proxy_timing_share(triples: list[Triple], out_dir: str | Path) -> Path:
             vals,
             left=left,
             color=SUBSTEP_COLORS[i],
-            hatch=SUBSTEP_HATCHES[i],
+            # The substep palette is a single-hue cream->burgundy lightness ramp, so it is
+            # already colourblind-safe on its own; at 3.3 in the hatching adds nothing but
+            # noise straight through the numbers.
+            hatch=None if paper else SUBSTEP_HATCHES[i],
             label=label,
         )
         for j, (v, offset) in enumerate(zip(vals, left, strict=True)):
-            if v > 4:
-                ax.text(offset + v / 2, j, f"{v:.0f}%", ha="center", va="center", fontsize=8)
+            # 5% of a 2.6 in bar is 0.13 in and a "7%" label is 0.11 in at 9 pt, so 5 is the
+            # real floor. It has to stay this low: prepare_model sits at 4-7% and is one of the
+            # three terms the caption's 73-78% feature-extraction claim adds up.
+            if v > (5 if paper else 4):
+                ax.text(
+                    offset + v / 2,
+                    j,
+                    f"{v:.0f}%",
+                    ha="center",
+                    va="center",
+                    # White on the three dark segments, ink on the two pale ones.
+                    color=theme.BG if (paper and i >= 2) else theme.INK,
+                )
         left += vals
     ax.set_xlim(0, 100)
     ax.set_xlabel("% of total proxy wall-time")
-    ax.set_title("Proxy timing substep share per head")
-    ax.legend(loc="lower right", fontsize=8)
+    theme.title(ax, "Proxy timing substep share per head")
+    if paper:
+        # Full substep names need two rows; five across would overrun the column.
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.34), ncol=3, handlelength=1.0)
+    else:
+        ax.legend(loc="lower right")
     return _save(fig, out_dir, "proxy_timing_share")
 
 
@@ -638,24 +753,106 @@ def plot_value_frontier(triples: list[Triple], out_dir: str | Path) -> Path:
         return _save(fig, out_dir, "value_frontier")
 
     widest_head = triples[-1].head if triples else "widest"
-    fig, ax = plt.subplots(figsize=(8, 6))
+    paper = theme.is_paper()
+    # Body figure (page-limited): hold the 3.34 x 2.35 in footprint it already occupies.
+    fig, ax = plt.subplots(
+        figsize=theme.size((8, 6), (theme.COLUMN_W_IN, 2.35)),
+        constrained_layout=paper,
+    )
     ax.scatter(
         vf["proxy_inference_s"],
         vf["proxy_r2"],
         color=theme.PROXY_COLOR,
         marker=theme.PROXY_MARKER,
-        s=70,
+        s=25 if paper else 70,
         zorder=3,
     )
-    for _, row in vf.iterrows():
+    # 16 names at 9 pt cannot coexist in a 3.3 in column. The figure's point is the cost/quality
+    # trade-off, which is carried entirely by the Pareto set (cheapest model at each quality
+    # level) — so paper mode labels the frontier and leaves the dominated interior unlabeled.
+    labelled = vf
+    if paper:
+        ordered = vf.sort_values("proxy_inference_s")
+        keep, best = [], float("-inf")
+        for idx, row in ordered.iterrows():
+            if float(row["proxy_r2"]) > best:
+                best = float(row["proxy_r2"])
+                keep.append(idx)
+        # The Pareto set alone is only the cheap corner. The cost *spread* is the figure's
+        # headline number, so the extremes on both axes are named too — they are exactly the
+        # models the surrounding text quotes.
+        keep += [
+            vf["proxy_inference_s"].idxmax(),
+            vf["proxy_r2"].idxmax(),
+            vf["proxy_r2"].idxmin(),
+        ]
+        labelled = vf.loc[list(dict.fromkeys(keep))]
+    if paper:
+        # Names are ~1 in wide against a 2.6 in axes, so they need room to live in.
+        ax.margins(x=0.22, y=0.18)
+        # Outline the named points so it is obvious at a glance which dots carry a label.
+        ax.scatter(
+            labelled["proxy_inference_s"],
+            labelled["proxy_r2"],
+            facecolor=theme.PROXY_COLOR,
+            edgecolor=theme.INK,
+            linewidth=0.8,
+            marker=theme.PROXY_MARKER,
+            s=25,
+            zorder=4,
+        )
+    x_mid = float(vf["proxy_inference_s"].median())
+    # Group the labelled points into clusters of near-equal x, then inside a cluster put the
+    # higher-r² point's label above and the lower one's below. Alternating by index instead
+    # would put the lower dot's label on top and cross the two leader lines.
+    x_span = float(vf["proxy_inference_s"].max() - vf["proxy_inference_s"].min()) or 1.0
+    dy_by_index: dict[object, float] = {}
+    cluster: list[tuple[object, float, float]] = []
+
+    def _place(group: list[tuple[object, float, float]]) -> None:
+        for rank, (idx, _, _) in enumerate(sorted(group, key=lambda g: -g[2])):
+            dy_by_index[idx] = 9.0 if rank % 2 == 0 else -12.0
+
+    for idx, row in labelled.sort_values("proxy_inference_s").iterrows():
+        x, y = float(row["proxy_inference_s"]), float(row["proxy_r2"])
+        if cluster and (x - cluster[-1][1]) / x_span > 0.10:
+            _place(cluster)
+            cluster = []
+        cluster.append((idx, x, y))
+    _place(cluster)
+
+    # Flip right-half labels to the left of their marker so they stay inside the axes.
+    for idx, row in labelled.sort_values("proxy_inference_s").iterrows():
+        right_half = paper and float(row["proxy_inference_s"]) > x_mid
+        dx = -12 if right_half else 12
+        dy = dy_by_index[idx] if paper else 4
         ax.annotate(
             str(row["model"]),
             (row["proxy_inference_s"], row["proxy_r2"]),
-            fontsize=7,
-            xytext=(4, 4),
+            xytext=(dx, dy),
             textcoords="offset points",
+            ha="right" if right_half else "left",
+            va="center",
+            # Offset labels have to reach across the pool to find free space, so they pass over
+            # other markers; a near-opaque plate keeps them crisp without hiding much.
+            bbox={"facecolor": theme.BG, "alpha": 0.78, "edgecolor": "none", "pad": 0.6}
+            if paper
+            else None,
+            # A leader line is the only thing that makes the label-to-dot mapping unambiguous
+            # once labels have to be offset away from their marker to avoid each other.
+            arrowprops={
+                "arrowstyle": "-",
+                "linewidth": 0.5,
+                "color": theme.INK,
+                "shrinkA": 1,
+                "shrinkB": 3,
+            }
+            if paper
+            else None,
         )
-    ax.set_xlabel("proxy inference_s (backbone encode cost, head-independent)")
+    # The full label is 57 chars — 3.6 in at 9 pt, wider than the whole column.
+    full_xlabel = "proxy inference_s (backbone encode cost, head-independent)"
+    ax.set_xlabel("proxy inference_s (s)" if paper else full_xlabel)
     ax.set_ylabel("proxy r²")
-    ax.set_title(f"Inference value-frontier — widest head ({widest_head})")
+    theme.title(ax, f"Inference value-frontier — widest head ({widest_head})")
     return _save(fig, out_dir, "value_frontier")

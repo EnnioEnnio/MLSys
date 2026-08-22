@@ -115,8 +115,15 @@ Turn a `full_eval` run's CSVs into tables, plots, and a single `SUMMARY.md` to h
 
 ```bash
 python -m mlsys analyze results/<experiment>                 # → results/<experiment>/analysis/SUMMARY.md
+python -m mlsys analyze results/<experiment> --paper         # same, as paper-ready vector PDFs
 python -m mlsys regret --frozen F.csv --finetune T.csv       # standalone regret recompute (crash recovery)
 ```
+
+`--paper` switches the figures to the print preset: 9 pt text (matching the LaTeX caption size),
+no in-plot titles, fixed `\columnwidth` / `\textwidth` geometry, and vector PDF with Type 42
+fonts. Include those PDFs **without rescaling** or the 9 pt stops being 9 pt. The two side-scripts
+(`scripts/noise_report.py`, `scripts/cross_dataset_report.py`) take the same flag. Details and the
+exact `\includegraphics` widths are in [analysis.md](analysis.md#--paper--the-print-preset).
 
 Gather a run's CSVs into one folder per experiment. Each file keeps its **W&B run name** as the stem plus a `_frozen` / `_finetune` / `_regret` suffix — e.g. download `2296342_wine_reviews_fulleval_16_model_MLP_512` from W&B, save it as `..._MLP_512_frozen.csv`, and drop it in. `analyze` recovers head/width/dataset from that name, so the naming matters — see the [filename grammar](analysis.md#filename-grammar-how-head-labels-are-recovered).
 

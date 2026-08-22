@@ -178,6 +178,10 @@ def rank_survival_table(runs: dict[str, DatasetRun]) -> pd.DataFrame:
 # --------------------------------------------------------------------------- figures
 
 
+#: Run-level print-preset switch, set from ``main()`` by ``--paper``. Mirrors ``plots.PAPER``.
+PAPER: bool = False
+
+
 def _setup():
     import matplotlib
 
@@ -185,13 +189,30 @@ def _setup():
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    theme.apply_theme(plt, sns)
+    theme.apply_theme(plt, sns, paper=PAPER)
     return plt
+
+
+def _save(fig, out: Path) -> None:
+    """Write ``out``, retargeted to .pdf in paper mode. See ``plots.py:_save`` for the why."""
+    import matplotlib.pyplot as plt
+
+    if theme.is_paper():
+        fig.savefig(out.with_suffix(".pdf"))
+    else:
+        fig.tight_layout()
+        fig.savefig(out, dpi=150)
+    plt.close(fig)
 
 
 def plot_dataset_bands(runs: dict[str, DatasetRun], out: Path) -> None:
     plt = _setup()
-    fig, ax = plt.subplots(figsize=(9, 5.2))
+    paper = theme.is_paper()
+    # Appendix figure: full \textwidth, which also reclaims the 0.75x it was included at.
+    fig, ax = plt.subplots(
+        figsize=theme.size((9, 5.2), (theme.TEXT_W_IN, 2.6)),
+        constrained_layout=paper,
+    )
     for i, run in enumerate(runs.values()):
         for offset, series, color, marker in (
             (-0.13, run.frozen_r2, theme.PROXY_COLOR, theme.PROXY_MARKER),
@@ -206,13 +227,11 @@ def plot_dataset_bands(runs: dict[str, DatasetRun], out: Path) -> None:
                 alpha=0.7,
                 zorder=3,
             )
-    ax.set_xticks(range(len(runs)), list(runs), fontsize=10)
+    ax.set_xticks(range(len(runs)), list(runs))
     ax.set_ylabel("test r² (one point per model)")
     ax.axhline(0.0, color=theme.GRID, lw=1)
-    ax.set_title("Per-model r² by dataset — frozen proxy (tan) vs finetune reference (burgundy)")
-    fig.tight_layout()
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
+    theme.title(ax, "Per-model r² by dataset — frozen proxy (tan) vs finetune reference (burgundy)")
+    _save(fig, out)
 
 
 def plot_rank_survival(survival: pd.DataFrame, out: Path) -> None:
@@ -231,7 +250,10 @@ def plot_rank_survival(survival: pd.DataFrame, out: Path) -> None:
         theme.SUBSTEP_COLORS[2],
         theme.STATUS_COLORS["ok"],
     ]
-    fig, ax = plt.subplots(figsize=(9, 4.6))
+    fig, ax = plt.subplots(
+        figsize=theme.size((9, 4.6), (theme.TEXT_W_IN, 2.4)),
+        constrained_layout=theme.is_paper(),
+    )
     x = np.arange(len(survival))
     width = 0.2
     for j, ((column, label), color) in enumerate(zip(metrics, colors, strict=True)):
@@ -240,17 +262,20 @@ def plot_rank_survival(survival: pd.DataFrame, out: Path) -> None:
     ax.axhline(0.0, color=theme.INK, lw=0.8)
     ax.set_ylabel("Spearman rho (16-model rankings)")
     ax.set_ylim(-0.35, 1.0)
-    ax.set_title("Does the ranking survive a 2k-row budget?")
-    ax.legend(fontsize=8, loc="lower right")
-    fig.tight_layout()
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
+    theme.title(ax, "Does the ranking survive a 2k-row budget?")
+    ax.legend(loc="lower right")
+    _save(fig, out)
 
 
 def plot_housing_diagnosis(runs: dict[str, DatasetRun], out: Path) -> None:
     plt = _setup()
+    paper = theme.is_paper()
     housing, wine = runs["housing_full"], runs["wine_full"]
-    fig, ax = plt.subplots(figsize=(8, 5))
+    # Body figure (page-limited): hold the 3.34 x 2.08 in footprint it already occupies.
+    fig, ax = plt.subplots(
+        figsize=theme.size((8, 5), (theme.COLUMN_W_IN, 2.08)),
+        constrained_layout=paper,
+    )
     ax.scatter(
         wine.finetune_r2,
         wine.finetune_spearman,
@@ -258,7 +283,7 @@ def plot_housing_diagnosis(runs: dict[str, DatasetRun], out: Path) -> None:
         marker="^",
         s=32,
         alpha=0.55,
-        label="wine_full finetune (healthy: rho tracks r²)",
+        label="wine finetune" if paper else "wine_full finetune (healthy: rho tracks r²)",
     )
     ax.scatter(
         housing.frozen_r2,
@@ -267,7 +292,7 @@ def plot_housing_diagnosis(runs: dict[str, DatasetRun], out: Path) -> None:
         marker=theme.PROXY_MARKER,
         s=32,
         alpha=0.8,
-        label="housing_full frozen",
+        label="housing frozen" if paper else "housing_full frozen",
     )
     ax.scatter(
         housing.finetune_r2,
@@ -276,16 +301,16 @@ def plot_housing_diagnosis(runs: dict[str, DatasetRun], out: Path) -> None:
         marker=theme.REFERENCE_MARKER,
         s=32,
         alpha=0.8,
-        label="housing_full finetune",
+        label="housing finetune" if paper else "housing_full finetune",
     )
     ax.set_xlabel("test r²")
-    ax.set_ylabel("prediction-vs-target Spearman rho (per model)")
+    ax.set_ylabel(
+        "pred-vs-target rho" if paper else "prediction-vs-target Spearman rho (per model)"
+    )
     ax.set_xlim(-0.06, 1.0)
-    ax.set_title("usa_housing: models rank prices well, but r² ≈ 0 — a long-tail target problem")
-    ax.legend(fontsize=8, loc="center right")
-    fig.tight_layout()
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
+    theme.title(ax, "usa_housing: models rank prices well, but r² ≈ 0 — a long-tail target problem")
+    ax.legend(loc="lower right")
+    _save(fig, out)
 
 
 # --------------------------------------------------------------------------- report
@@ -296,7 +321,14 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, default=Path("results/dataset_comparison"))
     for label, default in DEFAULT_DIRS.items():
         parser.add_argument(f"--{label.replace('_', '-')}", type=Path, default=default)
+    parser.add_argument(
+        "--paper",
+        action="store_true",
+        help="print preset: 9 pt text, no in-plot titles, exact column/text width, vector PDF",
+    )
     args = parser.parse_args()
+    global PAPER
+    PAPER = args.paper
     dirs = {label: getattr(args, label) for label in DEFAULT_DIRS}
     args.out_dir.mkdir(parents=True, exist_ok=True)
 

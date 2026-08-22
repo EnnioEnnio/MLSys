@@ -114,11 +114,19 @@ def _load_surviving(experiment_dir: Path) -> tuple[list[Triple], list[str]]:
     return triples, skipped
 
 
-def analyze_experiment(experiment_dir: str | Path, out_dir: str | Path | None = None) -> Path:
-    """Build every artifact + ``SUMMARY.md`` for an experiment folder. Returns the SUMMARY path."""
+def analyze_experiment(
+    experiment_dir: str | Path, out_dir: str | Path | None = None, paper: bool = False
+) -> Path:
+    """Build every artifact + ``SUMMARY.md`` for an experiment folder. Returns the SUMMARY path.
+
+    ``paper=True`` switches the figures to the print preset (9 pt text, no in-plot titles,
+    exact ``\\columnwidth``/``\\textwidth`` sizing, vector PDF) — see ``theme.apply_theme``.
+    SUMMARY.md still links the emitted files, which are then ``.pdf`` rather than ``.png``.
+    """
     experiment_dir = Path(experiment_dir)
     out_dir = Path(out_dir) if out_dir else experiment_dir / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
+    plots.PAPER = paper
 
     triples, skipped = _load_surviving(experiment_dir)
     if not triples:

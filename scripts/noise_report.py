@@ -273,60 +273,93 @@ def regret_null_table(observed: pd.DataFrame, null: np.ndarray) -> pd.DataFrame:
 
 # --------------------------------------------------------------------------- figures
 
+#: Run-level print-preset switch, set from ``main()`` by ``--paper``. Mirrors ``plots.PAPER``.
+PAPER: bool = False
 
-def plot_seed_variability(
-    frozen: pd.DataFrame, finetune: pd.DataFrame, trainable: list[str], out: Path
-) -> None:
+
+def _setup():
+    """Lazy import + themed style. Returns the (plt, sns) pair. Mirrors ``plots.py:_setup``."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    theme.apply_theme(plt, sns)
+    theme.apply_theme(plt, sns, paper=PAPER)
+    return plt, sns
+
+
+def _save(fig, out: Path) -> None:
+    """Write ``out``, retargeted to .pdf in paper mode. See ``plots.py:_save`` for the why."""
+    import matplotlib.pyplot as plt
+
+    if theme.is_paper():
+        fig.savefig(out.with_suffix(".pdf"))
+    else:
+        fig.tight_layout()
+        fig.savefig(out, dpi=150)
+    plt.close(fig)
+
+
+def plot_seed_variability(
+    frozen: pd.DataFrame, finetune: pd.DataFrame, trainable: list[str], out: Path
+) -> None:
+    plt, _ = _setup()
+    paper = theme.is_paper()
     order = finetune.mean(axis=1).sort_values(ascending=False).index
-    fig, ax = plt.subplots(figsize=(12, 5.5))
+    # Body figure. Goes to full \textwidth in paper mode: 16 rotated model names at 9 pt need
+    # ~1.4 in of vertical space, which only pays for itself if the width grows too — and the
+    # figure was being included at 0.75\textwidth anyway, so the width was already there.
+    fig, ax = plt.subplots(
+        figsize=theme.size((12, 5.5), (theme.TEXT_W_IN, 2.6)),
+        constrained_layout=paper,
+    )
     for i, model in enumerate(order):
+        # The colour key lived in the title, which paper mode suppresses — so in paper mode it
+        # becomes a real legend (labelled once, on the first model only).
+        keyed = paper and i == 0
         ax.scatter(
             [i] * frozen.shape[1],
             frozen.loc[model],
             color=theme.PROXY_COLOR,
             marker=theme.PROXY_MARKER,
-            s=28,
+            s=14 if paper else 28,
             alpha=0.75,
             zorder=3,
+            label="frozen proxy" if keyed else None,
         )
         ax.scatter(
             [i] * finetune.shape[1],
             finetune.loc[model],
             color=theme.REFERENCE_COLOR,
             marker=theme.REFERENCE_MARKER,
-            s=28,
+            s=14 if paper else 28,
             alpha=0.75,
             zorder=3,
+            label="finetune reference" if keyed else None,
         )
     labels = [m if m in trainable else f"{m} *" for m in order]
-    ax.set_xticks(range(len(order)), labels, rotation=45, ha="right", fontsize=8)
+    ax.set_xticks(range(len(order)), labels, rotation=45, ha="right")
     ax.set_ylabel("test r²")
-    ax.set_title(
+    if paper:
+        ax.legend(loc="lower left", ncol=2, markerscale=1.6)
+    theme.title(
+        ax,
         f"r² across {frozen.shape[1]} seeds — frozen proxy (tan) vs finetune reference "
-        "(burgundy); * = model2vec frozen fallback"
+        "(burgundy); * = model2vec frozen fallback",
     )
-    fig.tight_layout()
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
+    _save(fig, out)
 
 
 def plot_rank_stability(fz_corr: pd.DataFrame, ft_corr: pd.DataFrame, out: Path) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
     import numpy as np
-    import seaborn as sns
 
-    theme.apply_theme(plt, sns)
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.4))
+    plt, sns = _setup()
+    paper = theme.is_paper()
+    # Appendix figure: full \textwidth, which also reclaims the 0.75x it was included at.
+    fig, axes = plt.subplots(
+        1, 2, figsize=theme.size((11, 4.4), (theme.TEXT_W_IN, 2.8)), constrained_layout=paper
+    )
     vmin = min(0.0, float(fz_corr.min().min()), float(ft_corr.min().min()))
     for ax, corr, label in ((axes[0], fz_corr, "frozen"), (axes[1], ft_corr, "finetune")):
         sns.heatmap(
@@ -339,24 +372,30 @@ def plot_rank_stability(fz_corr: pd.DataFrame, ft_corr: pd.DataFrame, out: Path)
             cbar=False,
             square=True,
             ax=ax,
+            annot_kws=theme.annot_kws(),
         )
         mean_off = float(np.mean(_offdiag(corr)))
-        ax.set_title(f"{label} ranking, seed x seed rho (mean {mean_off:.2f})")
-    fig.suptitle("Ranking stability across seeds (Spearman rho)")
-    fig.tight_layout()
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
+        # The per-panel title is the only way to tell the two matrices apart, so unlike every
+        # other title in the paper preset it has to stay — it is a label, not a description.
+        ax.set_title(
+            f"{label} (mean {mean_off:.2f})"
+            if paper
+            else f"{label} ranking, seed x seed rho (mean {mean_off:.2f})"
+        )
+    if not paper:
+        fig.suptitle("Ranking stability across seeds (Spearman rho)")
+    _save(fig, out)
 
 
 def plot_regret_vs_null(table: pd.DataFrame, out: Path) -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
-    theme.apply_theme(plt, sns)
-    fig, ax = plt.subplots(figsize=(8, 4.8))
+    plt, _ = _setup()
+    paper = theme.is_paper()
+    # Body figure (page-limited): hold the 3.34 x 2.00 in footprint it already occupies, and
+    # buy the room for 9 pt text by dropping the title and thinning the tick set instead.
+    fig, ax = plt.subplots(
+        figsize=theme.size((8, 4.8), (theme.COLUMN_W_IN, 2.0)),
+        constrained_layout=paper,
+    )
     budgets = table["budget"]
     null_color = theme.STATUS_COLORS["ok"]
     ax.fill_between(
@@ -367,7 +406,9 @@ def plot_regret_vs_null(table: pd.DataFrame, out: Path) -> None:
         table["null_mean"],
         color=null_color,
         ls="--",
-        label="random-ranking null (mean, 5-95%)",
+        # The caption already spells out "mean, 5-95% band", so paper mode drops it from the
+        # legend — at 9 pt those parentheticals cost a third of the plot area.
+        label="random-ranking null" if paper else "random-ranking null (mean, 5-95%)",
     )
     ax.fill_between(
         budgets, table["obs_min"], table["obs_max"], color=theme.REFERENCE_COLOR, alpha=0.25, lw=0
@@ -377,18 +418,20 @@ def plot_regret_vs_null(table: pd.DataFrame, out: Path) -> None:
         table["obs_mean"],
         color=theme.REFERENCE_COLOR,
         marker="o",
-        ms=4,
-        label="frozen proxy (mean, min-max over seeds)",
+        ms=2.5 if paper else 4,
+        label="frozen proxy" if paper else "frozen proxy (mean, min-max over seeds)",
     )
     ax.axhline(0.0, color=theme.GRID, lw=1)
     ax.set_xlabel("budget B (models fine-tuned)")
     ax.set_ylabel("regret@B (r²)")
-    ax.set_xticks(list(budgets))
-    ax.set_title("Observed proxy regret vs the random-ranking null")
+    # 16 tick labels at 9 pt need ~2.9 in — more than the axes has. Every 3rd budget keeps the
+    # axis readable and still lands on both endpoints (set() drops the duplicate when the
+    # stride already hits the last budget).
+    ticks = list(budgets)
+    ax.set_xticks(sorted({*ticks[::3], ticks[-1]}) if paper else ticks)
+    theme.title(ax, "Observed proxy regret vs the random-ranking null")
     ax.legend()
-    fig.tight_layout()
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
+    _save(fig, out)
 
 
 # --------------------------------------------------------------------------- report
@@ -405,7 +448,14 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, default=None, help="default <directory>/analysis")
     parser.add_argument("--n-permutations", type=int, default=10_000)
     parser.add_argument("--seed", type=int, default=0, help="Monte-Carlo RNG seed")
+    parser.add_argument(
+        "--paper",
+        action="store_true",
+        help="print preset: 9 pt text, no in-plot titles, exact column/text width, vector PDF",
+    )
     args = parser.parse_args()
+    global PAPER
+    PAPER = args.paper
     out_dir = args.out_dir or args.directory / "analysis"
     out_dir.mkdir(parents=True, exist_ok=True)
 

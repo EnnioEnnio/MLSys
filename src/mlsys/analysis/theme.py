@@ -106,23 +106,107 @@ def get_binary_cmap():
     return sns.color_palette([STATUS_COLORS["ok"], STATUS_COLORS["diverged"]])
 
 
-def apply_theme(plt, sns) -> None:  # type: ignore[no-untyped-def]
+# ------------------------------------------------------------------ paper (print) preset
+# Geometry measured from the rendered report PDF (`pdfimages -list`: px / rendered ppi), not
+# assumed from the class file. Authoring a figure at exactly its final printed size and
+# including it with `width=\columnwidth` / `width=\textwidth` means scale == 1.0, so a 9 pt
+# matplotlib font is 9 pt on the page — the supervisor's "same size as the LaTeX caption".
+COLUMN_W_IN = 3.335  # \columnwidth  = 240 pt
+TEXT_W_IN = 7.0  # \textwidth    = 504 pt (two-column span)
+PAPER_FONT_PT = 9.0  # acmart sigconf body / caption size
+
+# Module-level toggle rather than a threaded parameter: `apply_theme` already works by
+# mutating global rcParams, and every one of the 26 plot functions calls it. Flipping one
+# flag here beats adding a `paper=` argument to all of them.
+_PAPER = False
+
+
+def is_paper() -> bool:
+    """True when the paper (print) preset is active — see :func:`apply_theme`."""
+    return _PAPER
+
+
+def title(ax, text: str) -> None:  # type: ignore[no-untyped-def]
+    """Set an axes title, suppressed in paper mode.
+
+    In the report the LaTeX ``\\caption`` carries the description, so an in-plot title is
+    duplicated text that also steals vertical space from a page-limited body. Outside paper
+    mode the title stays, because ``SUMMARY.md`` needs to be readable standalone.
+    """
+    if not _PAPER:
+        ax.set_title(text)
+
+
+def size(default: tuple[float, float], paper: tuple[float, float]) -> tuple[float, float]:
+    """Pick a figsize: ``default`` for SUMMARY.md, ``paper`` for print.
+
+    Paper sizes must be the *final printed* size (``COLUMN_W_IN`` or ``TEXT_W_IN`` wide) so
+    LaTeX never rescales them.
+    """
+    return paper if _PAPER else default
+
+
+def annot_kws() -> dict[str, float]:
+    """``annot_kws`` for ``sns.heatmap`` — sizes in-cell numbers, which rcParams misses."""
+    return {"size": PAPER_FONT_PT} if _PAPER else {}
+
+
+def fig_ext() -> str:
+    """Vector PDF for the paper, PNG for SUMMARY.md."""
+    return "pdf" if _PAPER else "png"
+
+
+def apply_theme(plt, sns, paper: bool = False) -> None:  # type: ignore[no-untyped-def]
     """Set cream background, taupe grid, and the default seaborn palette.
 
     Call this from ``_setup`` in plots.py so the look is uniform without per-plot rcParams.
+    ``paper=True`` additionally switches typography to the print preset: every text element
+    at :data:`PAPER_FONT_PT`, thinner rules, and Type 42 font embedding.
     """
-    sns.set_theme(
-        style="whitegrid",
-        context="notebook",
-        rc={
-            "axes.facecolor": BG,
-            "figure.facecolor": BG,
-            "axes.edgecolor": GRID,
-            "grid.color": GRID,
-            "text.color": INK,
-            "axes.labelcolor": INK,
-            "xtick.color": INK,
-            "ytick.color": INK,
-        },
-    )
+    global _PAPER
+    _PAPER = paper
+
+    # `object` values: the colour keys are str but the paper block adds ints and floats.
+    rc: dict[str, object] = {
+        "axes.facecolor": BG,
+        "figure.facecolor": BG,
+        "axes.edgecolor": GRID,
+        "grid.color": GRID,
+        "text.color": INK,
+        "axes.labelcolor": INK,
+        "xtick.color": INK,
+        "ytick.color": INK,
+    }
+    if paper:
+        pt = PAPER_FONT_PT
+        rc |= {
+            # One size for everything — the supervisor's guideline is caption parity, and a
+            # figure with three different text sizes reads as three different figures.
+            "font.size": pt,
+            "axes.titlesize": pt,
+            "axes.labelsize": pt,
+            "xtick.labelsize": pt,
+            "ytick.labelsize": pt,
+            "legend.fontsize": pt,
+            "legend.title_fontsize": pt,
+            "figure.titlesize": pt,
+            # matplotlib's PDF backend defaults to Type 3 fonts, which ACM/VLDB/IEEE PDF
+            # checkers reject; the compiled paper is PDF/A-2b, which additionally requires
+            # every font embedded. Type 42 (TrueType) subsets satisfy both.
+            "pdf.fonttype": 42,
+            "ps.fonttype": 42,
+            # Rules scaled for a 3.3 in figure rather than an 8 in one.
+            "axes.linewidth": 0.6,
+            "grid.linewidth": 0.5,
+            "xtick.major.width": 0.6,
+            "ytick.major.width": 0.6,
+            "lines.linewidth": 1.2,
+            "lines.markersize": 4,
+            "legend.frameon": False,
+            "legend.borderaxespad": 0.3,
+            "legend.handlelength": 1.4,
+            "legend.columnspacing": 1.0,
+            "legend.labelspacing": 0.3,
+        }
+    sns.set_theme(style="whitegrid", context="notebook", rc=rc)
     sns.set_palette([PASS_COLORS["frozen"], PASS_COLORS["finetune"]])

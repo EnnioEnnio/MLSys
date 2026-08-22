@@ -7,6 +7,7 @@ convention)."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -527,6 +528,56 @@ def test_new_plots_smoke(tmp_path):
 
     p_frontier = plots.plot_value_frontier(triples, out)
     assert p_frontier.exists() and p_frontier.stat().st_size > 0
+
+
+# ----------------------------------------------------------------- paper (print) preset
+
+
+def test_paper_mode_emits_pdf_and_restores_default(tmp_path):
+    """``--paper`` writes vector PDF at the exact print size; default mode stays PNG."""
+    pytest.importorskip("pandas")
+    pytest.importorskip("seaborn")
+    from mlsys.analysis import plots, theme
+
+    _write_triple(tmp_path, "100", "MLP_128", with_regret=True)
+    (tf,) = loader.discover_triples(tmp_path)
+    triple = loader.load_triple(tf)
+
+    try:
+        plots.PAPER = True
+        pdf = plots.plot_regret_curve(triple, tmp_path / "paper")
+        assert pdf.suffix == ".pdf"
+        assert pdf.exists() and pdf.stat().st_size > 0
+        assert theme.is_paper()
+    finally:
+        plots.PAPER = False
+
+    # The preset is global mutable state; a later default run must not inherit it.
+    png = plots.plot_regret_curve(triple, tmp_path / "default")
+    assert png.suffix == ".png"
+    assert png.exists() and png.stat().st_size > 0
+    assert not theme.is_paper()
+
+
+def test_paper_mode_summary_links_pdfs_instead_of_embedding(tmp_path):
+    """Markdown cannot inline a PDF — paper mode must link figures, not ``![](...)`` them."""
+    pytest.importorskip("pandas")
+    pytest.importorskip("seaborn")
+    pytest.importorskip("scipy")
+    from mlsys.analysis import plots
+    from mlsys.analysis.report import analyze_experiment
+
+    _write_triple(tmp_path, "100", "MLP_128", with_regret=True)
+    try:
+        summary = analyze_experiment(tmp_path, out_dir=tmp_path / "out", paper=True)
+    finally:
+        plots.PAPER = False
+
+    text = summary.read_text()
+    assert "](" in text  # figures are referenced at all
+    assert ".pdf)" in text  # and they are the PDF ones
+    # No embedded-image syntax may point at a PDF.
+    assert re.search(r"!\[[^\]]*\]\([^)]*\.pdf\)", text) is None
 
 
 # ----------------------------------------------------------------- r1/r3 repeat comparison

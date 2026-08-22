@@ -64,13 +64,14 @@ naming the expected pattern (no silent guessing, no CLI override).
 
 ## Commands
 
-### `mlsys analyze <experiment_dir> [--out-dir DIR]`
+### `mlsys analyze <experiment_dir> [--out-dir DIR] [--paper]`
 
 Discovers the triples, builds every per-head + cross-head artifact, and writes `SUMMARY.md`.
 
 ```bash
 mlsys analyze results/first_fulleval_wine_16_outdated
 mlsys analyze results/first_fulleval_wine_16_outdated --out-dir /tmp/wine_report
+mlsys analyze results/first_fulleval_wine_16_outdated --paper     # figures for the LaTeX paper
 ```
 
 - **No `--metric` flag.** The whole regret pipeline is r²-only (proxy ranking = frozen-r²
@@ -79,6 +80,37 @@ mlsys analyze results/first_fulleval_wine_16_outdated --out-dir /tmp/wine_report
 - **No `--label` flag.** Head labels come from the filename grammar.
 - If a triple's `*_regret.csv` is missing, it is **recomputed on the fly** and written back
   into the experiment folder (see crash recovery).
+
+### `--paper` — the print preset
+
+Default output is tuned for reading `SUMMARY.md` on screen. `--paper` retunes it for inclusion
+in the LaTeX report, where figures are shrunk to column width and 12 pt matplotlib text ends up
+at 4–6 pt on the page. The same flag exists on `scripts/noise_report.py` and
+`scripts/cross_dataset_report.py`.
+
+| | default (`SUMMARY.md`) | `--paper` |
+|---|---|---|
+| in-plot title | yes | **no** — the LaTeX `\caption` carries it |
+| text size | seaborn `notebook` (11–12 pt) | **9 pt everywhere** (acmart body/caption size) |
+| figure size | dynamic, `max(8, len(models))` | **fixed** at the final printed size |
+| output | `.png` @ 120/150 dpi | **`.pdf`**, `pdf.fonttype=42` |
+| `SUMMARY.md` | embeds the PNGs | *links* the PDFs (Markdown cannot inline a PDF) |
+
+**Include the PDFs at exactly their authored width — do not rescale.** The sizes are chosen so
+LaTeX applies scale 1.0 and 9 pt in the file stays 9 pt on the page:
+
+```latex
+3.335 in  ->  \includegraphics[width=\columnwidth]{...}      % single-column plots
+3.43  in  ->  \includegraphics[width=0.49\textwidth]{...}    % side-by-side panels
+7.0   in  ->  \includegraphics[width=\textwidth]{...}        % full-width, inside figure*
+```
+
+Type 42 font embedding is not optional: matplotlib's PDF backend defaults to Type 3, which
+ACM/VLDB/IEEE PDF checkers reject, and a PDF/A build additionally requires every font embedded.
+
+Implementation lives in `analysis/theme.py` (`apply_theme(paper=True)` plus the `theme.title()`
+/ `theme.size()` / `theme.annot_kws()` / `theme.fig_ext()` helpers). It is a module-level
+switch, so every plot function picks it up without a per-call argument.
 
 ### `mlsys regret --frozen F.csv --finetune T.csv [--out R.csv] [--json J.json]`
 

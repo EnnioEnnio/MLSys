@@ -242,6 +242,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="where to write artifacts; default <experiment_dir>/analysis",
     )
+    analyze.add_argument(
+        "--paper",
+        action="store_true",
+        help="print preset: 9 pt text, no in-plot titles, exact column/text width, vector PDF",
+    )
 
     regret = sub.add_parser(
         "regret",
@@ -328,7 +333,7 @@ def _run_analyze(args: argparse.Namespace) -> int:
     # package so config-only commands stay fast (project convention).
     from mlsys.analysis import analyze_experiment
 
-    summary = analyze_experiment(args.experiment_dir, out_dir=args.out_dir)
+    summary = analyze_experiment(args.experiment_dir, out_dir=args.out_dir, paper=args.paper)
     print(f"[mlsys] wrote analysis to {summary.parent} (see {summary})")
     return 0
 

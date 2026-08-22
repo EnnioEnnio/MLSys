@@ -85,8 +85,8 @@
 ## Kiru:
 
 ### Pipeline implementation
-- seeding across models
-- learning-rate warmup decay scheduling (lr-warmup-decay-schedule not merged -- https://github.com/EnnioEnnio/MLSys/issues/44)
+- implemented deterministic initial seeding across models.
+- learning-rate warmup decay scheduling (lr-warmup-decay-schedule branch, not merged after deciding for Z-scoring only -- https://github.com/EnnioEnnio/MLSys/issues/44)
 
 ### Conception & Planning
 - Adapted model search pipeline to additional model family.

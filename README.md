@@ -1,6 +1,9 @@
 # MLSys — Model search for regression tasks
 
-Seminar project at HPI. Take a regression dataset, build a candidate pool of HuggingFace encoders, attach a fresh fully-connected head to each backbone, train against ground truth, rank candidates. Three strategies share the same metrics: `frozen` (head on a frozen backbone — the cheap proxy ranking), `finetune` (unfreeze + train backbone+head jointly — the expensive ground truth), and `full_eval` (run both over the pool and report **regret** — how much quality the proxy ranking loses versus fine-tuning everything; see [REGRET.md](REGRET.md)). v2 layers on successive halving + embedding caching.
+Seminar project at HPI. Take a regression dataset, build a candidate pool of HuggingFace encoders, attach a fresh fully-connected head to each backbone, train against ground truth, rank candidates. 
+Three strategies share the same metrics: `frozen` (head on a frozen backbone — the cheap proxy ranking), `finetune` (unfreeze + train backbone+head jointly — the expensive ground truth), and `full_eval` (run both over the pool and report **regret** — how much quality the proxy ranking loses versus fine-tuning everything; see [REGRET.md](REGRET.md)). v2 layers on successive halving + embedding caching.
+
+Find the final report in [Replace_the_Linear_Probe__Adapting_Feature-Based_Model_Search_to_Regression.pdf](Replace_the_Linear_Probe__Adapting_Feature-Based_Model_Search_to_Regression.pdf)
 
 ## Setup
 
